@@ -8,6 +8,7 @@ public enum eRelayState
 public sealed class RelayChannel
 {
     public string ExternalCaller { get; set; } = "";
+    public string ExternalSessionId { get; set; } = "";
     public InstanceProfile MainInstance { get; set; } = new();
     public InstanceProfile WorkerInstance { get; set; } = new();
     public string MainThreadId { get; set; } = "";

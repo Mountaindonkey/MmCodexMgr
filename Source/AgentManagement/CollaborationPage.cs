@@ -17,7 +17,7 @@ public sealed class CollaborationPage : UserControl
     /// <summary> 通道操作结果 </summary>
     private readonly Label Status = new() { AutoSize = true, Dock = DockStyle.Fill, Tag = eThemeRole.Muted };
 
-    public CollaborationPage(ManagerSettings Settings, RelayCoordinator Coordinator, AppTheme Theme, Action ToggleTheme, Action ShowBoard)
+    public CollaborationPage(ManagerSettings Settings, RelayCoordinator Coordinator, AppTheme Theme, Action ToggleTheme, Action ShowBoard, RelayStore? Store = null, ClaudeSessionStore? Sessions = null)
     {
         SuspendLayout();
         AutoScaleDimensions = new SizeF(96, 96);
@@ -53,7 +53,7 @@ public sealed class CollaborationPage : UserControl
         CursorPage.Controls.Add(new HarnessPage(Settings, Coordinator.Cursor, Theme, ToggleTheme, true));
         var DshPage = new NavigationPage("DSH");
         DshPage.Controls.Add(new DshPage(Settings));
-        ClaudeConnection = new ClaudeCodePage(Settings, ShowBoard);
+        ClaudeConnection = new ClaudeCodePage(Settings, ShowBoard, Sessions: Sessions, Store: Store, Coordinator: Coordinator);
         ClaudePage.Controls.Add(ClaudeConnection);
         SourceTabs.TabPages.Add(CodexPage);
         SourceTabs.TabPages.Add(CursorPage);

@@ -8,6 +8,7 @@ public sealed class ExternalReport
 {
     public string TaskId { get; set; } = "";
     public string ExternalCaller { get; set; } = "";
+    public string ExternalSessionId { get; set; } = "";
     public string Outcome { get; set; } = "";
     public string Summary { get; set; } = "";
     public List<string> Artifacts { get; set; } = new();
@@ -39,14 +40,14 @@ public sealed class ExternalInbox
             return File.Exists(FilePath) ? JsonSerializer.Deserialize<ExternalReport>(File.ReadAllBytes(FilePath), JsonOptions) ?? throw new InvalidDataException("外部回报为空") : null;
         }
     }
-    public List<ExternalReport> List(string Name, bool Unread = false, string After = "")
+    public List<ExternalReport> List(string Name, bool Unread = false, string After = "", string? SessionId = null)
     {
         lock (Gate)
         {
             string DirectoryPath = Path.Combine(Folder(Name), "inbox");
             if (!Directory.Exists(DirectoryPath)) return new();
             return Directory.EnumerateFiles(DirectoryPath, "*.json").Select(FilePath => JsonSerializer.Deserialize<ExternalReport>(File.ReadAllBytes(FilePath), JsonOptions) ?? throw new InvalidDataException("外部回报为空"))
-                .Where(Item => (!Unread || !Item.Read) && string.CompareOrdinal(Item.TaskId, After) > 0).OrderBy(Item => Item.TaskId, StringComparer.Ordinal).Take(RelayLimits.PageSize + 1).ToList();
+                .Where(Item => (!Unread || !Item.Read) && (SessionId is null || Item.ExternalSessionId == SessionId) && string.CompareOrdinal(Item.TaskId, After) > 0).OrderBy(Item => Item.TaskId, StringComparer.Ordinal).Take(RelayLimits.PageSize + 1).ToList();
         }
     }
     public ExternalReport Ack(string Name, string TaskId)
@@ -74,7 +75,7 @@ public sealed class ExternalInbox
             if (!File.Exists(FilePath))
                 SettingsStore.AtomicWrite(FilePath, JsonSerializer.SerializeToUtf8Bytes(new ExternalReport
                 {
-                    TaskId = Item.Id, ExternalCaller = Name, Outcome = Item.Outcome, Summary = Item.Result,
+                    TaskId = Item.Id, ExternalCaller = Name, ExternalSessionId = Item.Channel.ExternalSessionId, Outcome = Item.Outcome, Summary = Item.Result,
                     Artifacts = Item.ArtifactList, ReportedAt = Item.ReportedAt ?? Item.UpdatedAt,
                     ThreadId = Item.Channel.WorkerThreadId, InstanceId = Item.Channel.WorkerInstance.Id
                 }, JsonOptions));

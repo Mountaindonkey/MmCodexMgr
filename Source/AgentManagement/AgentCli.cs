@@ -89,6 +89,8 @@ public static class AgentCli
         调用方默认取 CODEX_HOME 与 CODEX_THREAD_ID
         在 Codex 外使用时显式提供 --caller-instance <实例> --caller-thread <会话ID>
         外部主管使用 --external-caller <允许列表中的名称> 可放在命令之前或之后 无需 CODEX_THREAD_ID
+          同时提供 --external-session-id <Claude会话UUID> 可按真实主管会话隔离任务、预算和回报
+          未提供会话ID时仅访问旧的无会话ID记录，不会合并其他主管会话
           需在管理器设置开启允许外部主管 并登记名称 默认关闭
           支持 instances projects sessions start status tree accept cancel wait inbox inbox-ack
           不可与 --caller-instance 或 --caller-thread 混用 外部主管为深度0根节点 不占槽位
@@ -194,7 +196,7 @@ public static class AgentCli
                 "progress" => "relay_progress", "tree" => "agent_tree", "retry-return" => "agent_retry_return", "reconcile" => "agent_reconcile", "open" => "agent_open", "resume" => "agent_resume", "cleanup" => "agent_cleanup",
                 _ => throw new InvalidOperationException("未知命令 " + Call.Command)
             };
-            var Request = new RelayRequest(CallerId, ThreadId, Command, Call.Arguments) { ExternalCaller = ExternalCaller ?? "" };
+            var Request = new RelayRequest(CallerId, ThreadId, Command, Call.Arguments) { ExternalCaller = ExternalCaller ?? "", ExternalSessionId = Call.OptionDict.GetValueOrDefault("external-session-id") ?? "" };
             var Result = Command == "relay_report" ? await RelayOutbox.DeliverAsync(Request, Cancellation, PipeName, OutboxRoot) : await RelayHost.RequestAsync(Request, Cancellation, PipeName);
             await Writer.WriteLineAsync(Result.GetRawText());
             return 0;
@@ -212,7 +214,7 @@ public static class AgentCli
     {
         var OptionDict = new Dictionary<string, string>();
         int CommandIndex = 0;
-        while (CommandIndex < ArgumentList.Length && ArgumentList[CommandIndex] is "--external-caller" or "--caller-instance" or "--caller-thread")
+        while (CommandIndex < ArgumentList.Length && ArgumentList[CommandIndex] is "--external-caller" or "--external-session-id" or "--caller-instance" or "--caller-thread")
         {
             string Key = ArgumentList[CommandIndex][2..];
             if (CommandIndex + 1 >= ArgumentList.Length || string.IsNullOrWhiteSpace(ArgumentList[CommandIndex + 1]) || ArgumentList[CommandIndex + 1].StartsWith("--", StringComparison.Ordinal)) throw new InvalidOperationException("缺少参数值 --" + Key);
@@ -261,7 +263,7 @@ public static class AgentCli
             string Key = ArgumentList[Index];
             if (!Key.StartsWith("--", StringComparison.Ordinal)) throw new InvalidOperationException("参数必须使用 --名称 值 " + Key);
             Key = Key[2..];
-            if (!AllowedList.Contains(Key) && Key is not ("caller-instance" or "caller-thread" or "external-caller")) throw new InvalidOperationException("此命令不支持参数 " + Key);
+            if (!AllowedList.Contains(Key) && Key is not ("caller-instance" or "caller-thread" or "external-caller" or "external-session-id")) throw new InvalidOperationException("此命令不支持参数 " + Key);
             string Value;
             if (Key == "unread" && (Index + 1 == ArgumentList.Length || ArgumentList[Index + 1].StartsWith("--", StringComparison.Ordinal))) Value = "true";
             else
@@ -275,8 +277,9 @@ public static class AgentCli
         {
             if (OptionDict.ContainsKey("caller-instance") || OptionDict.ContainsKey("caller-thread")) throw new InvalidOperationException("--external-caller 不能与 --caller-instance 或 --caller-thread 混用");
             if (Command is not ("help" or "instances" or "projects" or "sessions" or "start" or "status" or "tree" or "accept" or "cancel" or "wait" or "inbox" or "inbox-ack")) throw new InvalidOperationException("外部主管不支持命令 " + Command);
+            if (OptionDict.TryGetValue("external-session-id", out string? SessionId)) OptionDict["external-session-id"] = ExternalSupervisor.NormalizeSessionId(SessionId);
         }
-        else if (Command is "wait" or "inbox-ack" || OptionDict.ContainsKey("unread")) throw new InvalidOperationException("此命令或参数需要 --external-caller");
+        else if (Command is "wait" or "inbox-ack" || OptionDict.ContainsKey("unread") || OptionDict.ContainsKey("external-session-id")) throw new InvalidOperationException("此命令或参数需要 --external-caller");
         if (Command is "wait" or "inbox-ack" && !OptionDict.ContainsKey("task-id")) throw new InvalidOperationException("缺少 --task-id");
         if (OptionDict.TryGetValue("timeout-seconds", out string? TimeoutText) && (!int.TryParse(TimeoutText, out int TimeoutSeconds) || TimeoutSeconds is < 0 or > 86400)) throw new InvalidOperationException("timeout-seconds 范围为 0 至 86400");
         if (Command is "start" or "report" or "progress" or "dsh-send")
@@ -300,7 +303,7 @@ public static class AgentCli
         var Arguments = new Dictionary<string, object>();
         foreach (var Pair in OptionDict)
         {
-            if (Pair.Key.StartsWith("caller-", StringComparison.Ordinal) || Pair.Key == "external-caller") continue;
+            if (Pair.Key.StartsWith("caller-", StringComparison.Ordinal) || Pair.Key is "external-caller" or "external-session-id") continue;
             Arguments[Pair.Key.Replace('-', '_')] = Pair.Key switch { "offset" or "timeout-seconds" => int.Parse(Pair.Value), "confirmed" or "unread" => bool.Parse(Pair.Value), _ => Pair.Value };
         }
         return new(Command, OptionDict, JsonSerializer.SerializeToElement(Arguments));

@@ -27,7 +27,7 @@ public sealed partial class AgentManagementService
         var Main = CallerSession(Caller, ThreadId);
         var Route = new RelayChannel
         {
-            MainInstance = Caller, MainThreadId = ThreadId, MainTitle = Main.Title, ExternalCaller = ExternalSupervisor.Name(Caller),
+            MainInstance = Caller, MainThreadId = ThreadId, MainTitle = Main.Title, ExternalCaller = ExternalSupervisor.Name(Caller), ExternalSessionId = ExternalSupervisor.SessionId(ThreadId),
             WorkerInstance = new() { Id = DshRelayRunner.InstanceId, Name = "DeepSeek Harness", HomePath = Client.Connection.HomePath },
             WorkerThreadId = Session?.Id ?? "", WorkerTitle = Session?.Title ?? CreateTitle!, CreateTitle = CreateTitle ?? "",
             ProjectId = TargetProject?.Id ?? "", WorkingDirectory = Session?.Cwd ?? TargetProject!.Path,
@@ -38,6 +38,6 @@ public sealed partial class AgentManagementService
         string Instruction = Item.State == eRelayState.Running
             ? "管理器按原请求监测 DSH 桌面会话并回传结果 " + RelayLimits.DispatchWaitInstruction
             : "按已保存的任务状态继续处理 不重复派发";
-        return new { task_id = Item.Id, state = RelayLimits.StateText(Item.State), instance_id = DshRelayRunner.InstanceId, thread_id = Item.Channel.WorkerThreadId, created = Item.Channel.CreateTitle.Length != 0, session_kind = Item.Channel.CreateTitle.Length != 0 ? "new" : "existing", project_id = Item.Channel.ProjectId, cwd = Item.Channel.WorkingDirectory, worker_limits = Item.WorkerLimits, instruction = Instruction };
+        return new { task_id = Item.Id, state = RelayLimits.StateText(Item.State), instance_id = DshRelayRunner.InstanceId, thread_id = Item.Channel.WorkerThreadId, created = Item.Channel.CreateTitle.Length != 0, session_kind = Item.Channel.CreateTitle.Length != 0 ? "new" : "existing", project_id = Item.Channel.ProjectId, cwd = Item.Channel.WorkingDirectory, worker_limits = Item.WorkerLimits, source = DescribeSource(Item.Channel), instruction = Instruction };
     }
 }

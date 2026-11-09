@@ -198,7 +198,7 @@ public sealed class RelayPage : UserControl
 
     #region Actions
     private string CoordinatorText(RelayTreeEntry Item) => Item.MainInstanceId.StartsWith("external:", StringComparison.Ordinal)
-        ? "外部主管：" + Item.MainInstanceId["external:".Length..]
+        ? AgentDisplay.ExternalSession(Item.MainInstanceId, Item.MainTitle, Item.MainThreadId)
         : AgentDisplay.Session(Settings, Item.MainInstanceId, Item.MainName, Item.MainTitle, Item.MainThreadId);
 
     private void ShowExternalRootDetails(RelayTreeEntry Root)
@@ -206,8 +206,8 @@ public sealed class RelayPage : UserControl
         var TaskList = TreeView.ExternalRootTasks(Root);
         using var Dialog = new Form { Text = Root.Title, Font = Font, ClientSize = new Size(780, 580), MinimumSize = new Size(620, 420), StartPosition = FormStartPosition.CenterParent };
         var Body = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
-            Text = $"{Root.Title}\r\n主管身份 {Root.MainInstanceId}\r\n根节点深度 0，不占任务槽位\r\n全部分页共 {TaskList.Count} 项根任务；下级仍受原有预算与写入范围约束\r\n回报通过 CLI wait / inbox 读取，不唤醒 Codex 主会话\r\n\r\n" +
-                string.Join("\r\n\r\n", TaskList.Select(Item => $"任务 {Item.Title}\r\nID {Item.Id}\r\n状态 {RelayLimits.StateText(Item.State)}\r\n执行者 {AgentDisplay.Session(Settings, Item.WorkerInstanceId, Item.WorkerName, Item.WorkerTitle, Item.WorkerThreadId)}")) };
+            Text = $"{Root.Title}\r\n主管身份 {Root.MainInstanceId}\r\n主管会话 ID {ExternalSupervisor.SessionId(Root.MainThreadId)}\r\n根节点深度 0，不占任务槽位\r\n全部分页共 {TaskList.Count} 项根任务；下级仍受原有预算与写入范围约束\r\n回报通过 CLI wait / inbox 读取，不唤醒 Codex 主会话\r\n\r\n" +
+                string.Join("\r\n\r\n", TaskList.Select(Item => $"任务 {Item.Title}\r\nID {Item.Id}\r\n状态 {RelayLimits.StateText(Item.State)}\r\n执行者 {AgentDisplay.Session(Settings, Item.WorkerInstanceId, Item.WorkerName, Item.WorkerTitle, Item.WorkerThreadId)}\r\n执行会话 ID {Item.WorkerThreadId}")) };
         var Layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(16) };
         Layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         Layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));

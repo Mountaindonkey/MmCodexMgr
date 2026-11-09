@@ -92,6 +92,29 @@ internal static class ClaudeCodeSupervisorTests
                 Require(Arguments.SequenceEqual(new[] { "--name", "Codex 外部主管：claude", "--append-system-prompt", Prompt }), "native Windows argv preserves embedded JSON quotes, Unicode, multiline prompt and backslashes exactly");
                 Require(Data.RootElement.GetProperty("cwd").GetString() == Root, "native executable inherits the chosen working directory");
             }
+            var Session = new ClaudeCodeSession { Id = Guid.NewGuid().ToString("D"), Title = "实际会话 \"名称\" ' $literal \\ path", Cwd = Root, CliPath = Cli, CallerName = "claude" };
+            string SessionPrompt = ClaudeCodeSupervisor.BuildSupervisorPrompt(Callback, "claude", Session.Id);
+            Require(SessionPrompt.Split("--external-session-id " + Session.Id, StringSplitOptions.None).Length >= 3 && SessionPrompt.Contains("只处理本会话") && SessionPrompt.Contains("不能更换 UUID"), "session-bound prompt includes exact identity in both shell prefixes and prohibits taking another session's results");
+            foreach (bool Resume in new[] { false, true })
+            {
+                var SessionInfo = ClaudeCodeSupervisor.CreateTerminalStartInfo(Settings, Callback, Session, Resume);
+                var Actual = await CaptureAsync(SessionInfo, Path.Combine(Root, "session-" + Resume + ".json"), false);
+                string[] Expected = Resume ? new[] { "--name", Session.Title, "--resume", Session.Id, "--system-prompt-snapshot", "off", "--append-system-prompt", SessionPrompt } : new[] { "--name", Session.Title, "--session-id", Session.Id, "--append-system-prompt", SessionPrompt };
+                Require(Actual.GetProperty("arguments").EnumerateArray().Select(Value => Value.GetString()).SequenceEqual(Expected), "actual npm shim argv preserves exact UUID, title and session-bound supervisor prompt for resume=" + Resume);
+            }
+            Require(!Session.Recorded, "constructing and launching fake session commands never claims the Claude history has recorded a session");
+            Session.CliPath = NativeProbe;
+            foreach (bool Resume in new[] { false, true })
+            {
+                var SessionInfo = ClaudeCodeSupervisor.CreateTerminalStartInfo(Settings, Callback, Session, Resume);
+                var Actual = await CaptureAsync(SessionInfo, Path.Combine(Root, "native-session-" + Resume + ".json"), true);
+                string[] Expected = Resume ? new[] { "--name", Session.Title, "--resume", Session.Id, "--system-prompt-snapshot", "off", "--append-system-prompt", SessionPrompt } : new[] { "--name", Session.Title, "--session-id", Session.Id, "--append-system-prompt", SessionPrompt };
+                Require(Actual.GetProperty("arguments").EnumerateArray().Select(Value => Value.GetString()).SequenceEqual(Expected), "actual native argv preserves session identity, embedded quotes and multiline prompt for resume=" + Resume);
+            }
+            Reject(() => ClaudeCodeSupervisor.BuildSupervisorPrompt(Callback, "claude", "../other"), "prompt rejects a non-UUID session identity");
+            Reject(() => ClaudeCodeSupervisor.CreateTerminalStartInfo(Settings, Callback, Resume: true), "resume requires an exact registered session identity");
+            Session.CallerName = "other";
+            Reject(() => ClaudeCodeSupervisor.CreateTerminalStartInfo(Settings, Callback, Session), "launcher rejects a session from another external caller");
             var Check = await ClaudeCodeSupervisor.CheckAsync(Settings, CancellationToken.None);
             Require(Check.LoggedIn && Check.Version == "9.8.7" && Check.AuthMethod == "claude.ai" && Check.ApiProvider == "firstParty" && Check.Error == "", "fake CLI version and structured auth status produce the supported public health result: " + JsonSerializer.Serialize(Check));
             string HealthJson = JsonSerializer.Serialize(Check);
@@ -118,6 +141,26 @@ internal static class ClaudeCodeSupervisorTests
         }
     }
 
+    private static async Task<JsonElement> CaptureAsync(ProcessStartInfo Info, string Capture, bool Native)
+    {
+        Info.UseShellExecute = false;
+        Info.CreateNoWindow = true;
+        Info.RedirectStandardOutput = true;
+        Info.RedirectStandardError = true;
+        Info.ArgumentList.Remove("-NoExit");
+        Info.Environment[Native ? "MMCODEX_TEST_NATIVE_PROBE_FILE" : "MMCODEX_TEST_CAPTURE"] = Capture;
+        using var Cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var Child = Process.Start(Info) ?? throw new IOException("无法启动 Claude 会话参数探针");
+        var Output = Child.StandardOutput.ReadToEndAsync(Cancellation.Token);
+        var Error = Child.StandardError.ReadToEndAsync(Cancellation.Token);
+        try { await Child.WaitForExitAsync(Cancellation.Token); }
+        finally { if (!Child.HasExited) Child.Kill(true); }
+        await Task.WhenAll(Output, Error);
+        Require(Child.ExitCode == 0 && File.Exists(Capture), "session-aware launcher reaches the actual argv probe");
+        using var Data = JsonDocument.Parse(File.ReadAllBytes(Capture));
+        return Data.RootElement.Clone();
+    }
+
     private const string FakeCli = """
         $ErrorActionPreference = 'Stop'
         if ($args[0] -eq '--version') { Write-Output '9.8.7 (Claude Code)'; exit 0 }
@@ -141,7 +184,7 @@ internal static class ClaudeCodeSupervisorTests
     private static void Reject(Action Action, string Message)
     {
         try { Action(); }
-        catch (Exception Error) when (Error is InvalidOperationException or IOException or ArgumentException) { Require(true, Message); return; }
+        catch (Exception Error) when (Error is InvalidDataException or InvalidOperationException or IOException or ArgumentException) { Require(true, Message); return; }
         throw new Exception("FAILED Claude: " + Message);
     }
     private static async Task RejectAsync<T>(Func<Task> Action, string Message) where T : Exception

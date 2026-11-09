@@ -28,7 +28,7 @@ public sealed partial class AgentManagementService
         var Main = CallerSession(Caller, ThreadId);
         var Route = new RelayChannel
         {
-            MainInstance = Caller, MainThreadId = ThreadId, MainTitle = Main.Title, ExternalCaller = ExternalSupervisor.Name(Caller),
+            MainInstance = Caller, MainThreadId = ThreadId, MainTitle = Main.Title, ExternalCaller = ExternalSupervisor.Name(Caller), ExternalSessionId = ExternalSupervisor.SessionId(ThreadId),
             WorkerInstance = CursorRelayRunner.Profile, WorkerThreadId = Session?.Id ?? "", WorkerTitle = Session?.Title ?? CreateTitle!,
             CreateTitle = CreateTitle ?? "", WorkingDirectory = Cwd, WorkerModel = Model, CursorCliPath = Cli,
             CallbackCliPath = CliPath, TimeoutMinutes = Number(Arguments, "timeout_minutes", 60)
@@ -41,6 +41,7 @@ public sealed partial class AgentManagementService
             task_id = Item.Id, state = RelayLimits.StateText(Item.State), instance_id = CursorRelayRunner.InstanceId,
             thread_id = Item.Channel.WorkerThreadId, cwd = Cwd, model = Model, worker_limits = Item.WorkerLimits,
             created = Item.Channel.CreateTitle.Length != 0, session_kind = Item.Channel.CreateTitle.Length != 0 ? "new" : "existing",
+            source = DescribeSource(Item.Channel),
             tree_budget = Item.TreeBudget, tree_depth = Item.TreeDepth, workspace = Item.Workspace,
             instruction = Item.State == eRelayState.Running ? "Cursor CLI 直接执行当前任务 管理器自动回传结果 " + RelayLimits.DispatchWaitInstruction : "返回原任务记录 不重复启动 Cursor 派发或回传待核对时先核对目标会话"
         };

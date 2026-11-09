@@ -35,10 +35,14 @@ internal static class HarnessUiTests
                 }
                 new CursorSessionStore(Path.Combine(Root, "cursor", "sessions")).Save(new(Guid.NewGuid().ToString(), "Cursor 资源校验", Root, "test-model", "not-executed"));
                 var Store = new RelayStore(Root);
+                var ClaudeRegistry = new ClaudeSessionStore(Path.Combine(Root, "claude"));
+                string ClaudeSourceA = Guid.NewGuid().ToString("D"), ClaudeSourceB = Guid.NewGuid().ToString("D");
+                ClaudeRegistry.Save(new() { Id = ClaudeSourceA, Title = "资源主管", Cwd = Root, CallerName = "claude", Recorded = true });
+                ClaudeRegistry.Save(new() { Id = ClaudeSourceB, Title = "审核主管", Cwd = Root, CallerName = "claude", Recorded = true });
                 Store.SaveChannel(new() { MainInstance = Settings.InstanceList[0], WorkerInstance = Settings.InstanceList[1], MainThreadId = "main-thread", WorkerThreadId = "worker-thread", TimeoutMinutes = 0 });
                 using var Cursor = new CursorRelayRunner(Path.Combine(Root, "cursor"));
                 using var Coordinator = new RelayCoordinator(Store, new DesktopRelayBridge(), Cursor);
-                using var Form = new MainForm(Settings, true, Store, Coordinator) { Size = Size };
+                using var Form = new MainForm(Settings, true, Store, Coordinator, ClaudeSessions: ClaudeRegistry) { Size = Size };
                 Form.Show();
                 Form.ShowHarnessPage();
                 Application.DoEvents();
@@ -126,11 +130,14 @@ internal static class HarnessUiTests
                 Application.DoEvents();
                 var ClaudePage = Descendants(Collaboration).OfType<ClaudeCodePage>().Single();
                 if (!ClaudePage.Visible || !Descendants(ClaudePage).OfType<TextBox>().Single(Item => Item.Name == "ClaudeSupervisorInstructions").ReadOnly || !Descendants(ClaudePage).OfType<TextBox>().Single(Item => Item.Name == "ClaudeCallerName").Text.Equals("claude", StringComparison.Ordinal)) throw new Exception("Claude Code supervisor entry missing its actual settings or instructions");
-                foreach (var Control in Descendants(ClaudePage).Where(Item => Item is Button or TextBox or CheckBox))
+                foreach (var Control in Descendants(ClaudePage).Where(Item => Item.Visible && Item is Button or TextBox or CheckBox or DataGridView))
                 {
                     if (!Control.Parent!.ClientRectangle.Contains(Control.Bounds)) throw new Exception("Claude Code control clipped " + Control.Name + " " + Size + " bounds=" + Control.Bounds + " parent=" + Control.Parent.ClientRectangle);
                     Count++;
                 }
+                var ClaudeSessions = Descendants(ClaudePage).OfType<DataGridView>().Single(Item => Item.Name == "ClaudeSessions");
+                var ClaudeRelations = Descendants(ClaudePage).OfType<DataGridView>().Single(Item => Item.Name == "ClaudeTaskRelations");
+                if (ClaudeSessions.Height < 54 || ClaudeRelations.Height < 72 || !ClaudeSessions.Columns.Contains("id") || !ClaudeRelations.Columns.Contains("source_id") || !ClaudeRelations.Columns.Contains("worker_id")) throw new Exception("Claude session and task relation tables must remain visible with exact IDs " + Size);
                 Count++;
                 Store.Save(new RelayTask { RequestKey = "cursor-row", Title = "Codex 到 Cursor", Channel = new() { MainInstance = Settings.InstanceList[0], WorkerInstance = new() { Id = "cursor", Name = "grok-model" }, MainTitle = "协调会话", WorkerTitle = "执行会话" }, State = eRelayState.Accepted });
                 Settings.InstanceList[0].Name = "实例1";
@@ -147,6 +154,13 @@ internal static class HarnessUiTests
                 Form.Hide(); Form.Show(); Application.DoEvents();
                 typeof(DataGridView).GetMethod("OnCellContentClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(Grid, new object[] { new DataGridViewCellEventArgs(0, 0) });
                 if (Grid.RowCount != 3 || Grid.Rows[1].Cells[2].Value?.ToString() != "Cursor：下级执行") throw new Exception("Task expansion lost nested source identity");
+                Count++;
+                foreach (var Example in new[] { (Title: "只读检查资源", Source: ClaudeSourceA, Instance: Settings.InstanceList[0]), (Title: "独立检查清单", Source: ClaudeSourceA, Instance: Settings.InstanceList[1]), (Title: "审核检查结果", Source: ClaudeSourceB, Instance: Settings.InstanceList[0]) })
+                    Store.Save(new RelayTask { RequestKey = "claude-example-" + Example.Title, Title = Example.Title, State = eRelayState.Accepted,
+                        Channel = new() { ExternalCaller = "claude", ExternalSessionId = Example.Source, MainInstance = ExternalSupervisor.Profile("claude"), MainThreadId = ExternalSupervisor.ThreadId("claude", Example.Source),
+                            WorkerInstance = Example.Instance, WorkerThreadId = Guid.NewGuid().ToString("D"), WorkerTitle = Example.Title + "执行会话" } });
+                ClaudePage.RefreshSessions(false);
+                if (ClaudeRelations.RowCount != 3 || ClaudeSessions.RowCount != 2) throw new Exception("Claude preview must show named sessions and their separate target tasks");
                 Count++;
                 if (PreviewDirectory is not null && Dark && Size.Width == 1080)
                 {

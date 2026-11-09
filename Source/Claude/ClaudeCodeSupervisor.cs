@@ -39,19 +39,23 @@ public static class ClaudeCodeSupervisor
         throw new FileNotFoundException("未找到 Claude Code CLI，请先安装 Claude Code，或选择已安装的 claude.exe 路径");
     }
 
-    public static string BuildSupervisorPrompt(string MmcodexPath, string Caller)
+    public static string BuildSupervisorPrompt(string MmcodexPath, string Caller, string SessionId = "")
     {
         string Cli = RequireMmcodexPath(MmcodexPath, false);
         string Name = ExternalSupervisor.NormalizeName(Caller);
+        string Id = SessionId.Length == 0 ? "" : ClaudeSessionStore.NormalizeId(SessionId);
+        string Identity = "--external-caller " + Name + (Id.Length == 0 ? "" : " --external-session-id " + Id);
+        string SessionBoundary = Id.Length == 0 ? "" : "本 Claude 会话的准确 UUID 为 " + Id + "。所有主管命令必须保持这个 --external-session-id，只处理本会话派发的任务和回报。不能更换 UUID 读取或验收其他 Claude 会话的回报；会话名称仅用于显示，不能作为身份。";
         return $$"""
             你是通过 MmCodexMgr 连接 Codex 的外部主管，调用方名称为 {{Name}}。
+            {{SessionBoundary}}
             保留用户的任务目标、验收标准和授权范围；主管提示词只说明工具用法，不额外授权任何项目修改。
             用户要求由你调度 Codex 完成目标时，应实际派发并跟进，不要只给计划、示例或声称已经派发。用户指定复用会话时必须使用原会话；允许自动协作时可在任务范围内新建所需执行会话。
 
             本机 CLI 的 PowerShell 调用前缀为：
-            & {{Quote(Cli)}} --external-caller {{Name}}
+            & {{Quote(Cli)}} {{Identity}}
             如果你的命令工具是 Bash / Git Bash，改用这个调用前缀（不要把 PowerShell 的 & 语法直接交给 Bash）：
-            {{BashQuote(Cli.Replace('\\', '/'))}} --external-caller {{Name}}
+            {{BashQuote(Cli.Replace('\\', '/'))}} {{Identity}}
             所有主管命令都带上述身份。不使用 --caller-instance、--caller-thread，不伪造 CODEX_HOME 或 CODEX_THREAD_ID。
             管理器需保持运行，并启用允许外部主管且允许名称 {{Name}}。CLI 失败时读取 stderr 的 JSON 错误；不得声称失败请求已经送达。
 
@@ -93,14 +97,22 @@ public static class ClaudeCodeSupervisor
             """.ReplaceLineEndings(Environment.NewLine);
     }
 
-    public static ProcessStartInfo CreateTerminalStartInfo(ClaudeCodeSettings Settings, string MmcodexPath)
+    public static ProcessStartInfo CreateTerminalStartInfo(ClaudeCodeSettings Settings, string MmcodexPath, ClaudeCodeSession? Session = null, bool Resume = false)
     {
-        string Cli = ResolvePath(Settings.CliPath);
-        string Cwd = RequireWorkingDirectory(Settings.WorkingDirectory);
-        string Mmcodex = RequireMmcodexPath(MmcodexPath, true);
         string Caller = ExternalSupervisor.NormalizeName(Settings.CallerName);
-        string Prompt = BuildSupervisorPrompt(Mmcodex, Caller);
-        var Arguments = new[] { "--name", "Codex 外部主管：" + Caller, "--append-system-prompt", Prompt };
+        if (Resume && Session is null) throw new InvalidOperationException("继续 Claude Code 必须指定准确会话 UUID");
+        string Id = Session is null ? "" : ClaudeSessionStore.NormalizeId(Session.Id);
+        if (Session is not null && ExternalSupervisor.NormalizeName(Session.CallerName) != Caller) throw new InvalidOperationException("Claude Code 会话不属于当前调用方");
+        string Cli = ResolvePath(Session is not null && Session.CliPath.Length > 0 ? Session.CliPath : Settings.CliPath);
+        string Cwd = RequireWorkingDirectory(Session is not null && Session.Cwd.Length > 0 ? Session.Cwd : Settings.WorkingDirectory);
+        string Mmcodex = RequireMmcodexPath(MmcodexPath, true);
+        string Prompt = BuildSupervisorPrompt(Mmcodex, Caller, Id);
+        string Title = Session is not null && !string.IsNullOrWhiteSpace(Session.Title) ? Session.Title.Trim() : "Codex 外部主管：" + Caller;
+        var Arguments = new List<string> { "--name", Title };
+        if (Session is not null) Arguments.AddRange(new[] { Resume ? "--resume" : "--session-id", Id });
+        // An older session's saved system prompt must not hide this session's current supervisor identity.
+        if (Resume) Arguments.AddRange(new[] { "--system-prompt-snapshot", "off" });
+        Arguments.AddRange(new[] { "--append-system-prompt", Prompt });
         string Launch;
         if (Path.GetExtension(Cli).Equals(".exe", StringComparison.OrdinalIgnoreCase))
         {
@@ -129,9 +141,9 @@ public static class ClaudeCodeSupervisor
         return Info;
     }
 
-    public static void OpenTerminal(ClaudeCodeSettings Settings, string MmcodexPath)
+    public static void OpenTerminal(ClaudeCodeSettings Settings, string MmcodexPath, ClaudeCodeSession? Session = null, bool Resume = false)
     {
-        using var Terminal = Process.Start(CreateTerminalStartInfo(Settings, MmcodexPath)) ?? throw new InvalidOperationException("无法打开 Claude Code 主管终端");
+        using var Terminal = Process.Start(CreateTerminalStartInfo(Settings, MmcodexPath, Session, Resume)) ?? throw new InvalidOperationException("无法打开 Claude Code 主管终端");
     }
 
     public static async Task<ClaudeCodeCheck> CheckAsync(ClaudeCodeSettings Settings, CancellationToken Cancellation)

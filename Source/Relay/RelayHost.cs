@@ -6,6 +6,7 @@ namespace CodexInstanceManager;
 public sealed record RelayRequest(string InstanceId, string ThreadId, string Command, JsonElement Arguments)
 {
     public string ExternalCaller { get; init; } = "";
+    public string ExternalSessionId { get; init; } = "";
 }
 
 public sealed class RelayHost : IDisposable
@@ -103,7 +104,7 @@ public sealed class RelayHost : IDisposable
 
     private async Task<object> ExecuteAsync(RelayRequest Request, CancellationToken Cancellation)
     {
-        if (Request.ExternalCaller.Length == 0 && Request.InstanceId.StartsWith("external:", StringComparison.Ordinal))
+        if (Request.ExternalCaller.Length == 0 && (Request.ExternalSessionId.Length != 0 || Request.InstanceId.StartsWith("external:", StringComparison.Ordinal)))
             throw new InvalidOperationException("外部主管身份必须通过 --external-caller 授权");
         if (Request.ExternalCaller.Length != 0 || Request.Command.StartsWith("agent_", StringComparison.Ordinal) || Request.Command.StartsWith("dsh_", StringComparison.Ordinal))
             return await (AgentService ?? throw new InvalidOperationException("当前管理器未启用 CLI 服务 请更新并重启管理器")).ExecuteAsync(Request, Cancellation);

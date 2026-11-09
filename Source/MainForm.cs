@@ -32,6 +32,7 @@ public sealed class MainForm : Form
     private readonly bool PreviewOnly;
     private readonly RelayStore? TaskStore;
     private readonly RelayCoordinator? TaskCoordinator;
+    private readonly ClaudeSessionStore? ClaudeSessions;
     private List<RunningInstance> RunningList = new();
     private bool Polling;
     private bool RefreshAgain;
@@ -43,7 +44,7 @@ public sealed class MainForm : Form
     public InstanceProfile? Selected => InstanceList.SelectedItem as InstanceProfile;
 
     #region Layout
-    public MainForm(ManagerSettings Settings, bool PreviewOnly = false, RelayStore? TaskStore = null, RelayCoordinator? TaskCoordinator = null)
+    public MainForm(ManagerSettings Settings, bool PreviewOnly = false, RelayStore? TaskStore = null, RelayCoordinator? TaskCoordinator = null, ClaudeSessionStore? ClaudeSessions = null)
     {
         SuspendLayout();
         this.Settings = Settings;
@@ -52,6 +53,7 @@ public sealed class MainForm : Form
         MainTabs.Theme = Theme;
         this.TaskStore = TaskStore;
         this.TaskCoordinator = TaskCoordinator;
+        this.ClaudeSessions = ClaudeSessions;
         AutoScaleDimensions = new SizeF(96, 96);
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = "Codex 实例管理器";
@@ -266,7 +268,7 @@ public sealed class MainForm : Form
     {
         if (CollaborationTab.Controls.Count != 0) return;
         if (TaskCoordinator is null) throw new InvalidOperationException("协作服务尚未连接");
-        var Page = new CollaborationPage(Settings, TaskCoordinator, Theme, () => SafeAction(ToggleTheme), ShowRelayPage);
+        var Page = new CollaborationPage(Settings, TaskCoordinator, Theme, () => SafeAction(ToggleTheme), ShowRelayPage, TaskStore, ClaudeSessions);
         CollaborationTab.Controls.Add(Page);
         Theme.Apply(Page);
     }

@@ -38,7 +38,7 @@ public sealed class RelayTreeView
             var Group = ExternalGroups[Key];
             string Id = ExternalRootPrefix + Entry.MainInstanceId + "/" + Entry.MainThreadId;
             if (KnownExternalRoots.Add(Id)) ExpandedDict[Id] = RelayLimits.PageSize;
-            var Root = new RelayTreeEntry(Id, "外部主管：" + Entry.MainInstanceId["external:".Length..], eRelayState.Running, "", "", Group.Count, Entry.MainName, "", "", "", null)
+            var Root = new RelayTreeEntry(Id, AgentDisplay.ExternalSession(Entry.MainInstanceId, Entry.MainTitle, Entry.MainThreadId), eRelayState.Running, "", "", Group.Count, Entry.MainName, "", "", "", null)
             {
                 MainInstanceId = Entry.MainInstanceId, MainThreadId = Entry.MainThreadId, MainTitle = Entry.MainTitle
             };

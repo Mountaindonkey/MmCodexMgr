@@ -8,23 +8,29 @@
 2. CLI 路径留空可自动发现已安装的 `claude`；选择 Claude 的工作目录，调用方名称默认 `claude`。
 3. 勾选“允许此主管调度 Codex”，点击“保存连接”。这会登记现有外部主管开关及名称白名单，不改变 Claude 或 Codex 的模型、凭据和全局规则。
 4. 点击“检查连接”，核对 Claude CLI、现有登录及管理器通道状态。尚未登录时先在自己的终端运行 `claude auth login`。
-5. 点击“启动 Claude Code”。管理器在所选目录打开交互终端，自动附加 Codex 调度指令；你直接向 Claude 输入工作目标。
+5. 填写 Claude 会话名称并新建会话，或刷新本机 Claude 会话后选择准确 ID，再继续所选会话。新建使用 Claude 原生 `--session-id`，继续使用 `--resume`；附加主管指令自动携带所选 UUID。
+
+页面现在同时显示 Claude 会话列表和任务关联表。每条关联明确给出 **来源 Claude 会话名称/UUID → 任务 → 目标 Agent 实例名称/ID → 执行会话名称/ID → 状态**。一个 Claude 会话可以同时关联多个执行任务，不固定绑定到一个执行会话。
+
+“待首条消息确认”只表示管理器已登记准备使用的 UUID；“已发现会话”表示本机 Claude 历史中已出现该 UUID，均不冒充模型运行状态。实际派发关系以管理器保存的任务记录为准。
 
 可以对打开的 Claude Code 说：
 
 > 在 primary 新建一个只读 Codex 会话，读取 E:\prj\mine\MmCodexMgr\Source\CodexInstanceManager.csproj 并告诉我目标框架。不要修改文件。你负责实际派发、等待回报、核对原文件后验收，不要只生成计划。
 
-Claude 会使用 `mmcodex --external-caller claude` 查询实例、创建或复用 Codex 会话、调用 `wait` 等待回报，验证后执行 `accept`。在“任务看板”中可看到“外部主管：claude”及它派出的任务。
+Claude 会使用 `mmcodex --external-caller claude --external-session-id <本会话UUID>` 查询实例、创建或复用 Codex 会话、调用 `wait` 等待回报，验证后执行 `accept`。任务看板按具体主管会话分组，并显示会话名与 ID。
 
 这里使用的是你本机 Claude Code 已有的登录、订阅或 Key 配置。管理器不保存或转发 API Key，也不把 Claude Key 用作 Codex 模型凭据。Claude 与 Codex 各自按原有配置运行，Claude 负责组织和验收任务。启动保留 Claude 的正常权限确认。
 
-如果 Claude Code 已经在其他终端运行，点击“复制主管指令”，将指令发给那个 Claude 会话即可；无需另开会话。复制本身不派发任何 Codex 任务。
+如果 Claude Code 已经在其他终端运行，先刷新并选择它的真实会话，或登记准确 UUID，再复制所选会话的主管指令发给它；无需另开会话。复制本身不派发任何 Codex 任务。不要将某个 UUID 的指令粘贴给另一条会话。
 
 ## 启用
 
 在管理器的设置页开启“允许外部主管”，将 `claude` 加入名称允许列表并保存。默认关闭；未启用或名称未登记时，管理器拒绝外部请求。名称是本机调用方标识，不是远程身份认证；本机通信仅允许当前 Windows 用户访问。
 
 `--external-caller <名称>` 可以放在命令之前或之后。它不能与 `--caller-instance` 或 `--caller-thread` 混用；即使环境里存在 Codex 身份，也使用明确指定的外部身份。
+
+`--external-session-id <UUID>` 将任务、请求去重、预算、收件箱和验收归属到具体主管会话。同一名称下的不同会话分别管理各自任务。省略它保留旧的未关联调用方式，但旧记录不会被猜测关联到某条 Claude 会话，也不能读取已按 UUID 归属的其他任务。
 
 支持 `instances`、`projects`、`sessions`、`start`、`status`、`tree`、`accept`、`cancel`、`wait`、`inbox` 和 `inbox-ack`。执行方仍使用原有 `progress` 和 `report` 命令回报，外部主管不冒充执行方。
 
@@ -34,9 +40,10 @@ Claude 会使用 `mmcodex --external-caller claude` 查询实例、创建或复�
 
 ```powershell
 $cli = 'E:\prj\mine\MmCodexMgr\mmcodex.exe'
-& $cli --external-caller claude instances
-& $cli --external-caller claude projects --instance primary
-& $cli --external-caller claude sessions --instance primary
+$scope = @('--external-caller', 'claude', '--external-session-id', '<页面所选的真实Claude会话UUID>')
+& $cli @scope instances
+& $cli @scope projects --instance primary
+& $cli @scope sessions --instance primary
 
 $request = @{
     request_id = 'claude-read-primary-001'
@@ -61,12 +68,12 @@ $request = @{
 }
 $requestFile = Join-Path $env:TEMP 'claude-read-primary-001.json'
 $request | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $requestFile -Encoding utf8
-$started = & $cli --external-caller claude start --json-file $requestFile | ConvertFrom-Json
+$started = & $cli @scope start --json-file $requestFile | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'start 请求失败，先核对错误与原请求记录' }
 $started | ConvertTo-Json -Depth 10
 
 $taskId = $started.task_id
-$result = & $cli --external-caller claude wait --task-id $taskId --timeout-seconds 600 | ConvertFrom-Json
+$result = & $cli @scope wait --task-id $taskId --timeout-seconds 600 | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'wait 连接失败，保留 task_id 后重新连接' }
 if ($result.timed_out) { throw '尚未收到回报，保留 task_id 后继续 wait' }
 if ($result.outcome -ne 'completed') { throw '任务未完成，先处理回报或终止状态' }
@@ -74,8 +81,8 @@ $result | ConvertTo-Json -Depth 10
 
 # 阅读 summary，并独立读取原文件核对完成内容后再验收。
 Get-Content -LiteralPath 'E:\prj\mine\MmCodexMgr\Source\CodexInstanceManager.csproj'
-& $cli --external-caller claude accept --task-id $taskId
-& $cli --external-caller claude inbox-ack --task-id $taskId
+& $cli @scope accept --task-id $taskId
+& $cli @scope inbox-ack --task-id $taskId
 ```
 
 `start` 立即返回任务受理结果，包含 `task_id`、`thread_id`、`instance_id`、`created` 及 `session_kind`（`new` 或 `existing`）。派发成功与执行完成是两个阶段；只有收到有效回报并复核产物后才调用 `accept`。如果派发返回投递待核对状态，应核对原会话和记录，不要更换 `request_id` 重复创建。
@@ -92,6 +99,7 @@ Get-Content -LiteralPath 'E:\prj\mine\MmCodexMgr\Source\CodexInstanceManager.csp
   "thread_id": "实际执行会话ID",
   "instance_id": "primary",
   "external_caller": "claude",
+  "external_session_id": "实际Claude会话UUID",
   "read": false,
   "read_at": null
 }
@@ -102,7 +110,7 @@ Get-Content -LiteralPath 'E:\prj\mine\MmCodexMgr\Source\CodexInstanceManager.csp
 ## second：复用已有会话
 
 ```powershell
-& $cli --external-caller claude sessions --instance second
+& $cli @scope sessions --instance second
 
 # 用 sessions 输出中的准确 ID，不能按重名标题猜测。
 $request.request_id = 'claude-read-second-001'
@@ -111,16 +119,16 @@ $request.Remove('create_title')
 $request.session = '<second 中空闲会话的准确ID>'
 $secondFile = Join-Path $env:TEMP 'claude-read-second-001.json'
 $request | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $secondFile -Encoding utf8
-$second = & $cli --external-caller claude start --json-file $secondFile | ConvertFrom-Json
+$second = & $cli @scope start --json-file $secondFile | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) { throw 'second start 请求失败' }
-$secondResult = & $cli --external-caller claude wait --task-id $second.task_id --timeout-seconds 600 | ConvertFrom-Json
+$secondResult = & $cli @scope wait --task-id $second.task_id --timeout-seconds 600 | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0 -or $secondResult.timed_out -or $secondResult.outcome -ne 'completed') { throw '尚无可验收的完成回报' }
-& $cli --external-caller claude status --task-id $second.task_id
-& $cli --external-caller claude tree --task-id $second.task_id
+& $cli @scope status --task-id $second.task_id
+& $cli @scope tree --task-id $second.task_id
 
 # 核对回报后验收。
-& $cli --external-caller claude accept --task-id $second.task_id
-& $cli --external-caller claude inbox-ack --task-id $second.task_id
+& $cli @scope accept --task-id $second.task_id
+& $cli @scope inbox-ack --task-id $second.task_id
 ```
 
 在 second 新建会话时，同样使用 `create_title`，省略 `session`。两者必须且只能提供一个。`project` 可选；省略时允许使用无项目会话，不移动已有会话。
@@ -136,13 +144,13 @@ if ($LASTEXITCODE -ne 0 -or $secondResult.timed_out -or $secondResult.outcome -n
 等待超时或中断不会撤销或重新执行任务。保留 `task_id`，需要继续等待时再次调用 `wait`。管理器退出会断开本次连接；重启管理器后用相同身份和任务 ID 重新等待。无需循环调用 `status` 或读写信箱目录。
 
 ```powershell
-& $cli --external-caller claude inbox
-& $cli --external-caller claude inbox --unread
-& $cli --external-caller claude inbox-ack --task-id $taskId
-& $cli --external-caller claude wait --task-id $taskId --timeout-seconds 600
+& $cli @scope inbox
+& $cli @scope inbox --unread
+& $cli @scope inbox-ack --task-id $taskId
+& $cli @scope wait --task-id $taskId --timeout-seconds 600
 
 # 不再需要的任务可撤销整个任务及其下级。
-& $cli --external-caller claude cancel --task-id $taskId
+& $cli @scope cancel --task-id $taskId
 ```
 
 `inbox-ack` 仅标记已读，不删除回报，也不代替验收。已读回报仍可通过 `wait` 和不带 `--unread` 的 `inbox` 读取。分页时将上次返回的 `next_after` 传给 `--after`。
@@ -153,7 +161,7 @@ if ($LASTEXITCODE -ne 0 -or $secondResult.timed_out -or $secondResult.outcome -n
 
 ## 预算与兼容性
 
-外部主管是深度 0 的根，不占联调槽位。执行任务从深度 1 开始，沿用 `tree_session_max`、`max_depth`、`session_max`、`cross_agent_max` 和 `worker_limits` 检查。外部身份不放宽预算；同一主管名下任务共享任务树额度。只读声明不能委派写入，写入任务必须声明绝对 `write_paths`，并行任务不能占用重叠写入范围。
+具体外部主管会话是深度 0 的根，不占联调槽位。执行任务从深度 1 开始，沿用 `tree_session_max`、`max_depth`、`session_max`、`cross_agent_max` 和 `worker_limits` 检查。外部身份不放宽预算；同一主管会话名下任务共享任务树额度。只读声明不能委派写入，写入任务必须声明绝对 `write_paths`，并行任务不能占用重叠写入范围。
 
 外部主管的直接执行目标均为其他实例；调度多个直接任务时应按实际并发设置 `cross_agent_max`，不要只提高 `session_max`。需要下级继续分工时，增加相应 `max_depth` 并明确 `worker_limits`，保持整棵树有可用槽位。
 

@@ -79,7 +79,7 @@ internal static class ExternalUiTests
             var View = new RelayTreeView(Store);
             View.Refresh(0);
             var Group = View.RowList.Single(Row => RelayTreeView.IsExternalRoot(Row.Entry) && Row.Entry.MainInstanceId == "external:claude");
-            Require(Group.Depth == 0 && Group.Entry.Title == "外部主管：claude", "external supervisor has a distinct depth-zero root");
+            Require(Group.Depth == 0 && Group.Entry.Title == "外部主管：claude（未关联会话）", "legacy external supervisor has a depth-zero root without claiming a real Claude session");
             Require(View.RowList.Where(Row => !RelayTreeView.IsExternalRoot(Row.Entry) && Row.Entry.MainInstanceId == "external:claude").All(Row => Row.Depth == 1), "external tasks appear one level below the supervisor root");
             Require(View.RowList.Single(Row => Row.Entry.Id == Legacy.Id).Depth == 0, "Codex task roots keep their existing depth");
             Require(View.ExternalRootTasks(Group.Entry).Select(Item => Item.Id).ToHashSet().SetEquals(Owned.Select(Item => Item.Id)), "supervisor details and cancel scope include all pages and omit other callers and nested tasks");
