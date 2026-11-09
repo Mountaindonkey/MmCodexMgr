@@ -77,6 +77,7 @@ public sealed class RelayTaskValidator
     public async Task<RelayValidity> CheckAsync(RelayTask Item)
     {
         if (Item.State is not (eRelayState.Running or eRelayState.Recovering or eRelayState.Returned) || Item.State == eRelayState.Returned && Item.Outcome != "completed") return new(false, "");
+        if (Item.Channel.ExternalCaller.Length != 0) return new(false, "外部主管活动由 CLI 管理，无法依据 Codex 主会话状态判定无效", true);
         var EndpointList = new List<(InstanceProfile Instance, string Thread)> { (Item.Channel.MainInstance, Item.Channel.MainThreadId), (Item.Channel.WorkerInstance, Item.Channel.WorkerThreadId) };
         var Pending = new Queue<string>();
         var SeenHashList = new HashSet<string> { Item.Id };

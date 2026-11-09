@@ -280,7 +280,7 @@ public sealed class MainForm : Form
     private void BuildSettingsPage()
     {
         if (SettingsTab.Controls.Count != 0) return;
-        var Page = new ManagerSettingsPage(PreviewOnly);
+        var Page = new ManagerSettingsPage(PreviewOnly, Settings: Settings);
         SettingsTab.Controls.Add(Page);
         Theme.Apply(Page);
     }

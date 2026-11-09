@@ -15,14 +15,39 @@ public sealed partial class RelayCoordinator : IDisposable
     public RelayChannel? Channel { get; private set; }
     public CursorRelayRunner? Cursor { get; }
     public DshRelayRunner? Dsh { get; }
+    public ExternalInbox ExternalInbox { get; }
 
     #region Lifecycle
-    public RelayCoordinator(RelayStore Store, IRelayBridge Bridge, CursorRelayRunner? Cursor = null, DshRelayRunner? Dsh = null)
+    public RelayCoordinator(RelayStore Store, IRelayBridge Bridge, CursorRelayRunner? Cursor = null, DshRelayRunner? Dsh = null, ExternalInbox? ExternalInbox = null, string? OutboxRoot = null)
     {
         this.Store = Store;
         this.Bridge = Bridge;
         this.Cursor = Cursor;
         this.Dsh = Dsh;
+        this.ExternalInbox = ExternalInbox ?? new ExternalInbox();
+        // Durable external reports must be received before restart expiry/interruption handling.
+        // Ordinary Codex reports retain their existing startup path.
+        RelayOutbox.ReplayOnceAsync(this, Lifetime.Token, OutboxRoot, Filter: Request =>
+            Request.Arguments.TryGetProperty("task_id", out var Id) && Store.FindTask(Id.GetString()!)?.Channel.ExternalCaller.Length > 0).GetAwaiter().GetResult();
+        foreach (var Item in Store.ExternalTasks())
+        {
+            try
+            {
+                this.ExternalInbox.SyncEvents(Item);
+                this.ExternalInbox.SaveReport(Item);
+                if (Item.Outcome.Length != 0 && Item.State is eRelayState.Returning or eRelayState.ReturnUncertain)
+                    Change(Item, eRelayState.Returned, "已恢复外部主管持久化回报 待验收");
+            }
+            catch (IOException Error)
+            {
+                Program.LogError(Error);
+                if (Item.Outcome.Length != 0 && Item.State is eRelayState.Returning or eRelayState.ReturnUncertain)
+                {
+                    Item.ReturnNotificationQueued = true;
+                    Change(Item, eRelayState.Returning, "外部回报备份暂不可写 启动后继续恢复");
+                }
+            }
+        }
         if (Bridge is IRelayProcessEvents Events) Events.InstanceExited += OnInstanceExited;
         Channel = Store.LoadChannel();
         foreach (string Id in Store.PendingIds())
@@ -163,19 +188,32 @@ public sealed partial class RelayCoordinator : IDisposable
             if (Item.State is eRelayState.Cancelled or eRelayState.TimedOut or eRelayState.Interrupted) throw new InvalidOperationException("任务当前不接受回调 " + RelayLimits.StateText(Item.State));
             if (Item.Outcome.Length != 0)
             {
-                if (Item.Outcome == Outcome && Item.Result == Result && Item.ArtifactList.SequenceEqual(ArtifactList)) return Item;
+                if (Item.Outcome == Outcome && Item.Result == Result && Item.ArtifactList.SequenceEqual(ArtifactList))
+                {
+                    if (Item.Channel.ExternalCaller.Length != 0) ExternalInbox.SaveReport(Item);
+                    return Item;
+                }
                 throw new InvalidOperationException("任务已经回报 禁止覆盖原结果 请另行派发新任务");
             }
             if (Item.State is not (eRelayState.Running or eRelayState.DispatchUncertain)) throw new InvalidOperationException("任务当前不接受回调 " + RelayLimits.StateText(Item.State));
             if (Store.UnfinishedChildIds(Item.Id).Count != 0) throw new InvalidOperationException("请先验收或中断本会话交给下级的任务 再向上级回报");
             Item.Outcome = Outcome;
             Item.Result = Result;
+            Item.ReportedAt = DateTimeOffset.UtcNow;
             Item.ArtifactList = ArtifactList;
+            AddExternalEvent(Item, "report", Result);
             Item.ReturnNotificationQueued = true;
             Change(Item, eRelayState.Returning, "执行结果已保存 等待通知原主会话");
             StopDeadline(Item.Id);
+            // External receipts never wait behind a potentially slow Codex desktop notification.
+            if (Item.Channel.ExternalCaller.Length != 0)
+            {
+                ExternalInbox.SaveReport(Item);
+                Change(Item, eRelayState.Returned, "结果已写入外部主管收件箱 待验收");
+            }
         }
         finally { Gate.Release(); }
+        if (Item.Channel.ExternalCaller.Length != 0) return Item;
         if (WaitForNotification) return await ReturnAsync(Item.Id);
         _ = DeliverQueuedReturnAsync(Item.Id);
         return Item;
@@ -190,6 +228,7 @@ public sealed partial class RelayCoordinator : IDisposable
             RequireCaller(Item.Channel.MainInstance.Id, Item.Channel.MainThreadId, InstanceId, ThreadId);
             if (Item.State == eRelayState.Accepted) return;
             if (Item.State is not (eRelayState.Returning or eRelayState.Returned or eRelayState.ReturnUncertain) || Item.Outcome != "completed") throw new InvalidOperationException("只有已保存的完成结果可以验收通过");
+            if (Item.Channel.ExternalCaller.Length != 0) ExternalInbox.SaveReport(Item);
             Change(Item, eRelayState.Accepted, "主会话确认验收通过");
         }
         finally { Gate.Release(); }
@@ -303,6 +342,13 @@ public sealed partial class RelayCoordinator : IDisposable
             {
                 Item = Store.Get(TaskId);
                 if (Item.State != eRelayState.Returning || !Item.ReturnNotificationQueued) return Item;
+                if (Item.Channel.ExternalCaller.Length != 0)
+                {
+                    // Persist before releasing the queued flag; restart can repeat this safely.
+                    ExternalInbox.SaveReport(Item);
+                    Change(Item, eRelayState.Returned, "结果已写入外部主管收件箱 待验收");
+                    return Item;
+                }
                 Item.ReturnNotificationQueued = false;
                 Change(Item, eRelayState.Returning, "开始通知原主会话");
             }
@@ -366,6 +412,12 @@ public sealed partial class RelayCoordinator : IDisposable
         Item.EventList.Add(DateTimeOffset.Now.ToString("MM-dd HH:mm:ss") + "  " + Message);
         Store.Save(Item);
         Changed?.Invoke();
+    }
+
+    private static void AddExternalEvent(RelayTask Item, string Kind, string Message)
+    {
+        if (Item.Channel.ExternalCaller.Length == 0) return;
+        Item.ExternalEvents.Add(new(Guid.NewGuid().ToString("N"), Item.Id, Kind, Message, DateTimeOffset.UtcNow, Item.Channel.WorkerThreadId, Item.Channel.WorkerInstance.Id));
     }
 
     private void ArmDeadline(RelayTask Item)
@@ -471,6 +523,14 @@ public sealed partial class RelayCoordinator : IDisposable
 
     private async Task NotifyFailureAsync(RelayTask Item, string Reason)
     {
+        if (Item.Channel.ExternalCaller.Length != 0)
+        {
+            AddExternalEvent(Item, "blocked", Reason);
+            Store.Save(Item);
+            ExternalInbox.SyncEvents(Item);
+            Changed?.Invoke();
+            return;
+        }
         try
         {
             await Bridge.SendAsync(Item.Channel.MainInstance, Item.Channel.MainThreadId, $"[MmCodexMgr 联调异常]\n任务 ID {Item.Id}\n任务 {Item.Title}\n{Reason}\n管理器已终止该任务的结果接收 请检查已生成的产物与仍在运行的工具进程 再决定是否重新派发", "", Lifetime.Token);

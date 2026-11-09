@@ -34,7 +34,7 @@ internal static class StartupTests
             Startup.SetEnabled(true);
             using (var Preview = new ManagerSettingsPage(true, Startup))
             {
-                var Input = Descendants(Preview).OfType<CheckBox>().Single();
+                var Input = Descendants(Preview).OfType<CheckBox>().Single(Item => Item.Name == "ManagerAutoStart");
                 Require(!Input.Enabled, "preview mode disables changes");
                 Input.Checked = true;
                 Input.Checked = false;
@@ -59,12 +59,12 @@ internal static class StartupTests
         new AppTheme(DarkMode).Apply(Form);
         Form.Show();
         Application.DoEvents();
-        var Input = Descendants(Page).OfType<CheckBox>().Single();
+        var Input = Descendants(Page).OfType<CheckBox>().Single(Item => Item.Name == "ManagerAutoStart");
         Require(!Input.Checked, "settings page reads the actual disabled state");
         Input.Checked = true;
         Require(Startup.IsEnabled, "settings switch enables startup immediately");
         using (var Reloaded = new ManagerSettingsPage(false, Startup))
-            Require(Descendants(Reloaded).OfType<CheckBox>().Single().Checked, "reopened settings page reflects the saved registration");
+            Require(Descendants(Reloaded).OfType<CheckBox>().Single(Item => Item.Name == "ManagerAutoStart").Checked, "reopened settings page reflects the saved registration");
         Input.Checked = false;
         Require(!Startup.IsEnabled, "settings switch removes startup immediately");
         foreach (var Control in Descendants(Page).Where(Item => Item is Label or CheckBox))

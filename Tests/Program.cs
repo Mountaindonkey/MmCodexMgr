@@ -13,6 +13,9 @@ internal static class Tests
     private static int Main(string[] ArgumentList)
     {
         if (ArgumentList.Contains("--library")) return LibraryTests.Run();
+        if (ArgumentList.Contains("--external-supervisor")) { ExternalSupervisorTests.Run(); return 0; }
+        if (ArgumentList.Contains("--external-cli")) { ExternalCliTests.Run(); return 0; }
+        if (ArgumentList.Contains("--external-ui")) return ExternalUiTests.Run();
         if (ArgumentList.Contains("--startup")) return StartupTests.Run();
         if (ArgumentList.Length == 2 && ArgumentList[0] == "--startup-render") return StartupTests.Run(ArgumentList[1]);
         if (ArgumentList.Contains("--dsh") || ArgumentList.Contains("--dsh-live")) { Task.Run(() => DshTests.RunAsync(ArgumentList.Contains("--dsh-live"))).GetAwaiter().GetResult(); return 0; }
@@ -70,7 +73,7 @@ internal static class Tests
                 Console.WriteLine("PASS config sync " + Count + " assertions; fixture=" + Root);
                 return 0;
             }
-            TestCc(); TestDetection(); WindowTests.Run(); TestBranding(); RelayTests.Run(); AgentManagementTests.Run(); AgentStartupTests.Run(); CollaborationTests.Run(); RecoveryTests.Run(); AgentCleanupTests.Run();
+            TestCc(); TestDetection(); WindowTests.Run(); TestBranding(); RelayTests.Run(); AgentManagementTests.Run(); AgentStartupTests.Run(); CollaborationTests.Run(); RecoveryTests.Run(); AgentCleanupTests.Run(); ExternalSupervisorTests.Run(); ExternalCliTests.Run();
             Console.WriteLine("PASS " + Count + " assertions; fixture=" + Root);
             return 0;
         }

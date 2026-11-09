@@ -7,6 +7,7 @@ public enum eRelayState
 
 public sealed class RelayChannel
 {
+    public string ExternalCaller { get; set; } = "";
     public InstanceProfile MainInstance { get; set; } = new();
     public InstanceProfile WorkerInstance { get; set; } = new();
     public string MainThreadId { get; set; } = "";
@@ -37,6 +38,8 @@ public sealed class RelayTask
     public eRelayState State { get; set; }
     public string Outcome { get; set; } = "";
     public string Result { get; set; } = "";
+    public DateTimeOffset? ReportedAt { get; set; }
+    public List<ExternalEvent> ExternalEvents { get; set; } = new();
     public bool ReturnNotificationQueued { get; set; }
     public List<string> ArtifactList { get; set; } = new();
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

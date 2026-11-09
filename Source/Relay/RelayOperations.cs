@@ -16,7 +16,9 @@ public sealed partial class RelayCoordinator
             Item.ProgressStage = Stage;
             Item.ProgressMessage = Message;
             Item.ProgressAt = DateTimeOffset.UtcNow;
+            AddExternalEvent(Item, Stage, Message);
             Change(Item, Item.State, "执行方进度 " + Stage + " " + Message);
+            ExternalInbox.SyncEvents(Item);
             return Item;
         }
         finally { Gate.Release(); }

@@ -25,6 +25,8 @@ public sealed class ManagerSettings
     public CursorHarnessSettings Cursor { get; set; } = new();
     public DshSettings Dsh { get; set; } = new();
     public LibrarySettings Library { get; set; } = new();
+    public bool AllowExternalSupervisors { get; set; }
+    public List<string> ExternalSupervisorAllowList { get; set; } = new();
 }
 
 public sealed class LibrarySettings

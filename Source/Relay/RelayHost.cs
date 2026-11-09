@@ -3,7 +3,10 @@ using System.Text.Json;
 
 namespace CodexInstanceManager;
 
-public sealed record RelayRequest(string InstanceId, string ThreadId, string Command, JsonElement Arguments);
+public sealed record RelayRequest(string InstanceId, string ThreadId, string Command, JsonElement Arguments)
+{
+    public string ExternalCaller { get; init; } = "";
+}
 
 public sealed class RelayHost : IDisposable
 {
@@ -27,7 +30,7 @@ public sealed class RelayHost : IDisposable
     public static async Task<JsonElement> RequestAsync(RelayRequest Request, CancellationToken Cancellation, string? PipeName = null)
     {
         using var Timeout = CancellationTokenSource.CreateLinkedTokenSource(Cancellation);
-        Timeout.CancelAfter(TimeSpan.FromSeconds(RelayLimits.RequestTimeoutSeconds + 5));
+        Timeout.CancelAfter(TimeSpan.FromSeconds(Request.Command == "agent_wait" ? WaitSeconds(Request) + 15 : RelayLimits.RequestTimeoutSeconds + 5));
         using var Client = new NamedPipeClientStream(".", PipeName ?? RelayLimits.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
         await Client.ConnectAsync(RelayLimits.ConnectTimeoutMilliseconds, Timeout.Token);
         await RelayWire.WriteAsync(Client, Request, RelayLimits.MaxFrameBytes, Timeout.Token);
@@ -42,33 +45,68 @@ public sealed class RelayHost : IDisposable
         {
             while (!Lifetime.IsCancellationRequested)
             {
-                await using var Server = new NamedPipeServerStream(PipeName, PipeDirection.InOut, 2, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-                await Server.WaitForConnectionAsync(Lifetime.Token);
-                using var RequestTimeout = CancellationTokenSource.CreateLinkedTokenSource(Lifetime.Token);
-                RequestTimeout.CancelAfter(TimeSpan.FromSeconds(RelayLimits.RequestTimeoutSeconds + 10));
-                try
-                {
-                    var Message = await RelayWire.ReadAsync(Server, RelayLimits.MaxFrameBytes, RequestTimeout.Token);
-                    var Request = Message.Deserialize<RelayRequest>() ?? throw new InvalidDataException("联调请求为空");
-                    object Result;
-                    try { Result = await ExecuteAsync(Request); }
-                    catch (Exception Error) { Program.LogError(Error); Result = new { error = Error.Message, error_kind = Error is IOException or TimeoutException or OperationCanceledException ? "delivery_uncertain" : "rejected" }; await RelayWire.WriteAsync(Server, Result, RelayLimits.MaxFrameBytes, RequestTimeout.Token); continue; }
-                    await RelayWire.WriteAsync(Server, new { result = Result }, RelayLimits.MaxFrameBytes, RequestTimeout.Token);
-                }
-                catch (OperationCanceledException) when (!Lifetime.IsCancellationRequested) { Program.LogError(new TimeoutException("联调客户端请求超时")); }
-                catch (IOException Error) { Program.LogError(Error); }
-                catch (JsonException Error) { Program.LogError(Error); }
-                catch (InvalidDataException Error) { Program.LogError(Error); }
+                var Server = new NamedPipeServerStream(PipeName, PipeDirection.InOut, NamedPipeServerStream.MaxAllowedServerInstances, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+                try { await Server.WaitForConnectionAsync(Lifetime.Token); }
+                catch { Server.Dispose(); throw; }
+                // Keep accepting while an external caller waits for a worker's report.
+                _ = HandleConnectionAsync(Server);
             }
         }
         catch (OperationCanceledException) when (Lifetime.IsCancellationRequested) { }
         catch (Exception Error) { Program.LogError(Error); Failed?.Invoke(Error); }
     }
 
-    private async Task<object> ExecuteAsync(RelayRequest Request)
+    private async Task HandleConnectionAsync(NamedPipeServerStream Server)
     {
-        if (Request.Command.StartsWith("agent_", StringComparison.Ordinal) || Request.Command.StartsWith("dsh_", StringComparison.Ordinal))
-            return await (AgentService ?? throw new InvalidOperationException("当前管理器未启用 CLI 服务 请更新并重启管理器")).ExecuteAsync(Request, Lifetime.Token);
+        await using (Server)
+        using (var RequestTimeout = CancellationTokenSource.CreateLinkedTokenSource(Lifetime.Token))
+        {
+            RequestTimeout.CancelAfter(TimeSpan.FromSeconds(RelayLimits.RequestTimeoutSeconds + 10));
+            try
+            {
+                var Message = await RelayWire.ReadAsync(Server, RelayLimits.MaxFrameBytes, RequestTimeout.Token);
+                var Request = Message.Deserialize<RelayRequest>() ?? throw new InvalidDataException("联调请求为空");
+                object Result;
+                try
+                {
+                    if (Request.Command == "agent_wait") RequestTimeout.CancelAfter(TimeSpan.FromSeconds(WaitSeconds(Request) + 10));
+                    _ = CancelOnDisconnectAsync(Server, RequestTimeout);
+                    Result = await ExecuteAsync(Request, RequestTimeout.Token);
+                }
+                catch (Exception Error)
+                {
+                    Program.LogError(Error);
+                    Result = new { error = Error.Message, error_kind = Error is IOException or TimeoutException or OperationCanceledException ? "delivery_uncertain" : "rejected" };
+                    await RelayWire.WriteAsync(Server, Result, RelayLimits.MaxFrameBytes, RequestTimeout.Token);
+                    return;
+                }
+                await RelayWire.WriteAsync(Server, new { result = Result }, RelayLimits.MaxFrameBytes, RequestTimeout.Token);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception Error) when (Error is IOException or JsonException or InvalidDataException) { Program.LogError(Error); }
+            finally { RequestTimeout.Cancel(); }
+        }
+    }
+
+    private static async Task CancelOnDisconnectAsync(NamedPipeServerStream Server, CancellationTokenSource Cancellation)
+    {
+        try { if (await Server.ReadAsync(new byte[1], Cancellation.Token) == 0) Cancellation.Cancel(); }
+        catch (Exception Error) when (Error is IOException or OperationCanceledException or ObjectDisposedException) { }
+    }
+
+    public static int WaitSeconds(RelayRequest Request)
+    {
+        int Seconds = Request.Arguments.TryGetProperty("timeout_seconds", out var Value) ? Value.GetInt32() : 60;
+        if (Seconds is < 0 or > 86400) throw new InvalidOperationException("timeout_seconds 范围为 0 至 86400");
+        return Seconds;
+    }
+
+    private async Task<object> ExecuteAsync(RelayRequest Request, CancellationToken Cancellation)
+    {
+        if (Request.ExternalCaller.Length == 0 && Request.InstanceId.StartsWith("external:", StringComparison.Ordinal))
+            throw new InvalidOperationException("外部主管身份必须通过 --external-caller 授权");
+        if (Request.ExternalCaller.Length != 0 || Request.Command.StartsWith("agent_", StringComparison.Ordinal) || Request.Command.StartsWith("dsh_", StringComparison.Ordinal))
+            return await (AgentService ?? throw new InvalidOperationException("当前管理器未启用 CLI 服务 请更新并重启管理器")).ExecuteAsync(Request, Cancellation);
         var Arguments = Request.Arguments;
         switch (Request.Command)
         {

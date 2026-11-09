@@ -35,7 +35,7 @@ public static class RelayOutbox
         }
     }
 
-    public static async Task<(int Recovered, int Failed)> ReplayOnceAsync(RelayCoordinator Coordinator, CancellationToken Cancellation, string? DirectoryPath = null, bool WaitForNotification = true)
+    public static async Task<(int Recovered, int Failed)> ReplayOnceAsync(RelayCoordinator Coordinator, CancellationToken Cancellation, string? DirectoryPath = null, bool WaitForNotification = true, Func<RelayRequest, bool>? Filter = null)
     {
         string Folder = DirectoryPath ?? Root;
         if (!Directory.Exists(Folder)) return (0, 0);
@@ -48,6 +48,7 @@ public static class RelayOutbox
             {
                 if (new FileInfo(PathValue).Length > RelayLimits.MaxFrameBytes) throw new InvalidDataException("发件箱文件超过限制 " + PathValue);
                 var Request = JsonSerializer.Deserialize<RelayRequest>(File.ReadAllBytes(PathValue)) ?? throw new InvalidDataException("发件箱请求为空 " + PathValue);
+                if (Filter is not null && !Filter(Request)) continue;
                 var Arguments = Request.Arguments;
                 await Coordinator.ReportAsync(Request.InstanceId, Request.ThreadId, Arguments.GetProperty("task_id").GetString()!, Arguments.GetProperty("outcome").GetString()!, Arguments.GetProperty("summary").GetString()!, Arguments.GetProperty("artifacts").EnumerateArray().Select(Item => Item.GetString()!).ToList(), WaitForNotification);
                 File.Delete(PathValue);

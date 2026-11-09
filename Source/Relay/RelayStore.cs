@@ -35,6 +35,17 @@ public sealed partial class RelayStore
     public RelayTask? FindTask(string Id) => Find("id", Id);
     public RelayTask? FindRequest(string Key) => Find("request_key", Key);
 
+    public List<RelayTask> ExternalTasks()
+    {
+        using var Database = Open();
+        using var Command = Database.CreateCommand();
+        Command.CommandText = "SELECT data FROM relay_tasks WHERE COALESCE(json_extract(data,'$.Channel.ExternalCaller'),'')<>''";
+        using var Reader = Command.ExecuteReader();
+        var Result = new List<RelayTask>();
+        while (Reader.Read()) Result.Add(JsonSerializer.Deserialize<RelayTask>(Reader.GetString(0))!);
+        return Result;
+    }
+
     public int Count()
     {
         using var Database = Open();

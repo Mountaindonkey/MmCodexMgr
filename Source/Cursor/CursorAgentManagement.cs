@@ -25,10 +25,10 @@ public sealed partial class AgentManagementService
         int SubagentMax = ReadSubagentMax(Arguments, Caller, ThreadId, Existing);
         var WorkerLimits = ReadWorkerLimits(Arguments, SubagentMax) ?? new RelayAgentLimits { SubagentMax = 0, SessionMax = 0, CrossAgentMax = 0 };
         if (WorkerLimits.SubagentMax != 0 || WorkerLimits.SessionMax != 0 || WorkerLimits.CrossAgentMax != 0) throw new InvalidOperationException("Cursor 执行端目前只执行当前任务 worker_limits 必须全部为零");
-        var Main = Catalog.Session(Caller, ThreadId);
+        var Main = CallerSession(Caller, ThreadId);
         var Route = new RelayChannel
         {
-            MainInstance = Caller, MainThreadId = ThreadId, MainTitle = Main.Title,
+            MainInstance = Caller, MainThreadId = ThreadId, MainTitle = Main.Title, ExternalCaller = ExternalSupervisor.Name(Caller),
             WorkerInstance = CursorRelayRunner.Profile, WorkerThreadId = Session?.Id ?? "", WorkerTitle = Session?.Title ?? CreateTitle!,
             CreateTitle = CreateTitle ?? "", WorkingDirectory = Cwd, WorkerModel = Model, CursorCliPath = Cli,
             CallbackCliPath = CliPath, TimeoutMinutes = Number(Arguments, "timeout_minutes", 60)
@@ -40,6 +40,7 @@ public sealed partial class AgentManagementService
         {
             task_id = Item.Id, state = RelayLimits.StateText(Item.State), instance_id = CursorRelayRunner.InstanceId,
             thread_id = Item.Channel.WorkerThreadId, cwd = Cwd, model = Model, worker_limits = Item.WorkerLimits,
+            created = Item.Channel.CreateTitle.Length != 0, session_kind = Item.Channel.CreateTitle.Length != 0 ? "new" : "existing",
             tree_budget = Item.TreeBudget, tree_depth = Item.TreeDepth, workspace = Item.Workspace,
             instruction = Item.State == eRelayState.Running ? "Cursor CLI 直接执行当前任务 管理器自动回传结果 " + RelayLimits.DispatchWaitInstruction : "返回原任务记录 不重复启动 Cursor 派发或回传待核对时先核对目标会话"
         };

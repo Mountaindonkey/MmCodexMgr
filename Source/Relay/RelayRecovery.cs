@@ -113,6 +113,14 @@ public sealed partial class RelayCoordinator
 
     private async Task NotifyRecoveryFailureAsync(RelayTask Item, string Reason)
     {
+        if (Item.Channel.ExternalCaller.Length != 0)
+        {
+            AddExternalEvent(Item, "blocked", Reason);
+            Store.Save(Item);
+            ExternalInbox.SyncEvents(Item);
+            Changed?.Invoke();
+            return;
+        }
         try
         {
             await Bridge.SendAsync(Item.Channel.MainInstance, Item.Channel.MainThreadId, $"[MmCodexMgr 联调恢复受阻]\n任务 ID {Item.Id}\n任务 {Item.Title}\n{Reason}\n状态 {RelayLimits.StateText(Item.State)}\n原任务与下级记录均保留 尚未确认完成 不要重新创建或重复派发\n实例退出后可使用 agent_resume 或 CLI resume --task-id {Item.Id} 恢复原会话 投递不明时先核对目标会话再使用 reconcile", "", Lifetime.Token);

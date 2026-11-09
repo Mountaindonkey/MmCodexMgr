@@ -71,10 +71,10 @@ public sealed class RelayPage : UserControl
             Event.Value = Event.ColumnIndex switch
             {
                 0 => Prefix + (Row.More ? "加载更多下级…" : (Item.ChildCount == 0 ? "  " : TreeView.IsExpanded(Item.Id) ? "▼ " : "▶ ") + Item.Title),
-                1 => Row.More ? "" : AgentDisplay.Session(Settings, Item.MainInstanceId, Item.MainName, Item.MainTitle, Item.MainThreadId),
-                2 => Row.More ? "" : AgentDisplay.Session(Settings, Item.WorkerInstanceId, Item.WorkerName, Item.WorkerTitle, Item.WorkerThreadId),
-                3 => Row.More ? "" : RelayLimits.ProgressStateText(Item.State, Item.Outcome, Item.ProgressStage).Replace("主Agent", "协调者").Replace("子Agent", "执行者"),
-                4 => Row.More ? "" : Item.State is eRelayState.Accepted or eRelayState.Cancelled ? "删除" : "中断任务",
+                1 => Row.More ? "" : RelayTreeView.IsExternalRoot(Item) ? "根节点 · 深度 0 · 不占槽位" : CoordinatorText(Item),
+                2 => Row.More || RelayTreeView.IsExternalRoot(Item) ? "" : AgentDisplay.Session(Settings, Item.WorkerInstanceId, Item.WorkerName, Item.WorkerTitle, Item.WorkerThreadId),
+                3 => Row.More ? "" : RelayTreeView.IsExternalRoot(Item) ? "本页 " + Item.ChildCount + " 项任务" : RelayLimits.ProgressStateText(Item.State, Item.Outcome, Item.ProgressStage).Replace("主Agent", "协调者").Replace("子Agent", "执行者"),
+                4 => Row.More ? "" : RelayTreeView.IsExternalRoot(Item) ? "中断全部任务" : Item.State is eRelayState.Accepted or eRelayState.Cancelled ? "删除" : "中断任务",
                 _ => throw new ArgumentOutOfRangeException(nameof(Event.ColumnIndex))
             };
         };
@@ -101,19 +101,26 @@ public sealed class RelayPage : UserControl
                 else if (Item.ChildCount > 0) TreeView.Toggle(Item.Id);
                 RefreshTasks();
             }
-            if (Event.ColumnIndex == 4 && !Row.More) await RunAsync(() => Item.State is eRelayState.Accepted or eRelayState.Cancelled ? DeleteHistoryAsync(new(Item.Id, Item.Title, Item.State, DateTimeOffset.UtcNow, Item.Outcome)) : CancelAsync(Item.Id));
+            if (Event.ColumnIndex == 4 && !Row.More) await RunAsync(() => RelayTreeView.IsExternalRoot(Item) ? CancelExternalRootAsync(Item) : Item.State is eRelayState.Accepted or eRelayState.Cancelled ? DeleteHistoryAsync(new(Item.Id, Item.Title, Item.State, DateTimeOffset.UtcNow, Item.Outcome)) : CancelAsync(Item.Id));
         };
         TaskGrid.CellDoubleClick += async (_, Event) =>
         {
             if (Event.ColumnIndex == 4 || Event.RowIndex < 0 || Event.RowIndex >= TreeView.RowList.Count) return;
             var Row = TreeView.RowList[Event.RowIndex];
-            if (!Row.More) await RunAsync(() => { using var Dialog = new RelayTaskDialog(Store, Coordinator, Row.Entry.Id, Theme); Dialog.ShowDialog(this); return Task.CompletedTask; });
+            if (!Row.More) await RunAsync(() =>
+            {
+                if (RelayTreeView.IsExternalRoot(Row.Entry)) ShowExternalRootDetails(Row.Entry);
+                else { using var Dialog = new RelayTaskDialog(Store, Coordinator, Row.Entry.Id, Theme); Dialog.ShowDialog(this); }
+                return Task.CompletedTask;
+            });
         };
         TaskGrid.CellToolTipTextNeeded += (_, Event) =>
         {
             if (Event.RowIndex < 0 || Event.RowIndex >= TreeView.RowList.Count) return;
             var Item = TreeView.RowList[Event.RowIndex].Entry;
-            Event.ToolTipText = $"{Item.Title}\n协调者 {AgentDisplay.Session(Settings, Item.MainInstanceId, Item.MainName, Item.MainTitle, Item.MainThreadId)}\n执行者 {AgentDisplay.Session(Settings, Item.WorkerInstanceId, Item.WorkerName, Item.WorkerTitle, Item.WorkerThreadId)}\n{(Item.ProgressStage.Length == 0 ? "等待执行方开始确认" : Item.ProgressMessage)}\n单击任务名展开下级 双击查看详情与异常恢复";
+            Event.ToolTipText = RelayTreeView.IsExternalRoot(Item)
+                ? $"{Item.Title}\n主管深度为 0，不占任务槽位。任务按原有规则分页。\n双击查看该主管全部根任务；中断操作覆盖所有分页。"
+                : $"{Item.Title}\n协调者 {CoordinatorText(Item)}\n执行者 {AgentDisplay.Session(Settings, Item.WorkerInstanceId, Item.WorkerName, Item.WorkerTitle, Item.WorkerThreadId)}\n{(Item.ProgressStage.Length == 0 ? "等待执行方开始确认" : Item.ProgressMessage)}\n单击任务名展开下级 双击查看详情与异常恢复";
         };
         ListPanel.Controls.Add(TaskGrid);
         var Pages = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
@@ -190,6 +197,53 @@ public sealed class RelayPage : UserControl
     #endregion
 
     #region Actions
+    private string CoordinatorText(RelayTreeEntry Item) => Item.MainInstanceId.StartsWith("external:", StringComparison.Ordinal)
+        ? "外部主管：" + Item.MainInstanceId["external:".Length..]
+        : AgentDisplay.Session(Settings, Item.MainInstanceId, Item.MainName, Item.MainTitle, Item.MainThreadId);
+
+    private void ShowExternalRootDetails(RelayTreeEntry Root)
+    {
+        var TaskList = TreeView.ExternalRootTasks(Root);
+        using var Dialog = new Form { Text = Root.Title, Font = Font, ClientSize = new Size(780, 580), MinimumSize = new Size(620, 420), StartPosition = FormStartPosition.CenterParent };
+        var Body = new TextBox { Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
+            Text = $"{Root.Title}\r\n主管身份 {Root.MainInstanceId}\r\n根节点深度 0，不占任务槽位\r\n全部分页共 {TaskList.Count} 项根任务；下级仍受原有预算与写入范围约束\r\n回报通过 CLI wait / inbox 读取，不唤醒 Codex 主会话\r\n\r\n" +
+                string.Join("\r\n\r\n", TaskList.Select(Item => $"任务 {Item.Title}\r\nID {Item.Id}\r\n状态 {RelayLimits.StateText(Item.State)}\r\n执行者 {AgentDisplay.Session(Settings, Item.WorkerInstanceId, Item.WorkerName, Item.WorkerTitle, Item.WorkerThreadId)}")) };
+        var Layout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Padding = new Padding(16) };
+        Layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        Layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        Layout.Controls.Add(Body);
+        var Actions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true };
+        var CancelButton = MainForm.MakeButton("中断全部任务", async (_, _) =>
+        {
+            Actions.Enabled = false;
+            try { await CancelExternalRootAsync(Root); Dialog.Close(); }
+            catch (Exception Error) { Program.LogError(Error); MessageBox.Show(Dialog, Error.Message, "操作未完成"); }
+            finally { if (!Dialog.IsDisposed) Actions.Enabled = true; }
+        });
+        Actions.Controls.Add(CancelButton);
+        Actions.Controls.Add(MainForm.MakeButton("关闭", (_, _) => Dialog.Close()));
+        Layout.Controls.Add(Actions);
+        Dialog.Controls.Add(Layout);
+        Theme.Apply(Dialog);
+        Dialog.HandleCreated += (_, _) => Theme.ApplyTitleBar(Dialog);
+        Dialog.ShowDialog(this);
+    }
+
+    private async Task CancelExternalRootAsync(RelayTreeEntry Root)
+    {
+        if (MessageBox.Show(this, "中断「" + Root.Title + "」的全部未结束任务及其下级（包含其他分页）？\nCursor CLI 及其子进程将停止；Codex 模型和脚本需要手动停止。", "中断外部主管任务", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK) return;
+        var TaskList = TreeView.ExternalRootTasks(Root);
+        int Count = 0;
+        foreach (var Item in TaskList)
+        {
+            var Current = Store.FindTask(Item.Id);
+            if (Current is null || Current.State is eRelayState.Accepted or eRelayState.Cancelled) continue;
+            await Coordinator.CancelAsync(Item.Id);
+            Count++;
+        }
+        SetStatus("已中断外部主管任务 " + Count + " 项");
+    }
+
     private async Task CleanupBoardAsync()
     {
         SetStatus("正在检查任务并清理无效 阻塞和结束记录…");

@@ -37,8 +37,10 @@ public sealed class RelayTaskDialog : Form
     private void RefreshDetails()
     {
         var Item = Store.Get(TaskId);
+        bool ExternalMain = ExternalSupervisor.IsExternal(Item.Channel.MainInstance);
         int Slots = Store.Reservations().Count(Slot => (Slot.TreeRootId.Length == 0 ? new RelayPolicy(Store).RootId(Store.Get(Slot.Id)) : Slot.TreeRootId) == new RelayPolicy(Store).RootId(Item));
         Body.Text = $"任务 {Item.Title}\r\nID {Item.Id}\r\n上级任务 {Item.ParentTaskId}\r\n\r\n当前状态 {RelayLimits.StateText(Item.State)}\r\n进度阶段 {RelayLimits.StageText(Item.ProgressStage)}\r\n最后进度 {Item.ProgressAt?.ToLocalTime():yyyy-MM-dd HH:mm:ss}\r\n{Item.ProgressMessage}\r\n\r\n主会话 {Item.Channel.MainInstance.Name} / {Item.Channel.MainTitle}\r\n{Item.Channel.MainThreadId}\r\n执行会话 {Item.Channel.WorkerInstance.Name} / {Item.Channel.WorkerTitle}\r\n{Item.Channel.WorkerThreadId}\r\n项目 ID {Item.Channel.ProjectId}\r\n工作目录 {Item.Channel.WorkingDirectory}\r\n模型 {Item.Channel.WorkerModel}\r\n\r\n本树联调槽位 {Slots} / {Item.TreeBudget.MaxSessions}  当前层级 {Item.TreeDepth} / {Item.TreeBudget.MaxDepth}\r\n初始主会话不占槽位 等待下级的执行会话仍占槽位 原生 Subagent 未计入\r\nCursor CLI 取消时由管理器停止 Codex 模型与脚本仍需手动停止\r\n\r\n写入声明 {RelayLimits.WorkspaceText(Item.Workspace.Access)}\r\n{string.Join("\r\n", Item.Workspace.WritePathList)}\r\n\r\n执行要求\r\n{Item.Instructions}\r\n\r\n验收规范\r\n{Item.Acceptance}\r\n\r\n执行结果 {RelayLimits.OutcomeText(Item.Outcome)}\r\n{Item.Result}\r\n\r\n产物\r\n{string.Join("\r\n", Item.ArtifactList)}\r\n\r\n事件记录\r\n{string.Join("\r\n", Item.EventList)}";
+        if (ExternalMain) Body.Text = "回传路由 外部主管 CLI wait / inbox；结果持久化后不唤醒 Codex 主会话\r\n\r\n" + Body.Text;
         foreach (Control Old in Actions.Controls.Cast<Control>().ToArray()) { Actions.Controls.Remove(Old); Old.Dispose(); }
         AddAction("刷新详情", () => Task.CompletedTask);
         if (Item.State == eRelayState.ReturnUncertain) AddAction("核对后重发回传", async () =>
@@ -49,7 +51,7 @@ public sealed class RelayTaskDialog : Form
         if (Item.State == eRelayState.Interrupted) AddAction("恢复原任务", () => Coordinator.ResumeAsync(Item.Channel.MainInstance.Id, Item.Channel.MainThreadId, Item.Id));
         if (Item.State is (eRelayState.Returning or eRelayState.Returned or eRelayState.ReturnUncertain) && Item.Outcome == "completed") AddAction("确认验收通过", () => Coordinator.ReviewAsync(Item.Channel.MainInstance.Id, Item.Channel.MainThreadId, Item.Id));
         if (Item.Channel.WorkerInstance.Id == CursorRelayRunner.InstanceId && Coordinator.Cursor is not null) AddAction("查看 Cursor 执行日志", () => { Coordinator.Cursor.OpenTaskLog(Item.Id, Item.Title); return Task.CompletedTask; });
-        AddAction("打开主会话", () => OpenThreadAsync(Item.Channel.MainInstance, Item.Channel.MainThreadId));
+        if (!ExternalMain) AddAction("打开主会话", () => OpenThreadAsync(Item.Channel.MainInstance, Item.Channel.MainThreadId));
         if (Item.Channel.WorkerThreadId.Length != 0) AddAction("打开执行会话", () => OpenThreadAsync(Item.Channel.WorkerInstance, Item.Channel.WorkerThreadId));
         Theme.Apply(this);
         Body.Select(0, 0);
@@ -77,7 +79,7 @@ public sealed class RelayTaskDialog : Form
         Theme.Apply(Prompt);
         if (Prompt.ShowDialog(this) != DialogResult.OK) return;
         var Service = new AgentManagementService(Store, Coordinator, new AgentCatalog(), AgentCliDeployment.LoadPath());
-        await Service.ExecuteAsync(new(Item.Channel.MainInstance.Id, Item.Channel.MainThreadId, "agent_reconcile", JsonSerializer.SerializeToElement(new { task_id = Item.Id, session_id = Input.Text.Trim(), confirmed = true })), CancellationToken.None);
+        await Service.ReconcileTaskAsync(Item, Input.Text.Trim(), CancellationToken.None);
     }
 
     private async Task OpenThreadAsync(InstanceProfile Instance, string ThreadId) => await Coordinator.OpenSessionAsync(Instance, ThreadId, CancellationToken.None);
