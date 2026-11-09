@@ -26,7 +26,7 @@ public static class Program
         ApplicationConfiguration.Initialize();
         try
         {
-            if (ArgumentList.Length == 2 && ArgumentList[0] is "--render-preview" or "--render-relay-preview" or "--render-harness-preview" or "--render-library-preview")
+            if (ArgumentList.Length == 2 && ArgumentList[0] is "--render-preview" or "--render-relay-preview" or "--render-harness-preview" or "--render-library-preview" or "--render-claude-preview")
             {
                 string PreviewRoot = Path.Combine(Path.GetTempPath(), "CodexManagerRelayPreview-" + Guid.NewGuid().ToString("N"));
                 try
@@ -37,6 +37,7 @@ public static class Program
                     if (ArgumentList[0] == "--render-relay-preview") Preview.ShowRelayPage();
                     if (ArgumentList[0] == "--render-harness-preview") Preview.ShowHarnessPage();
                     if (ArgumentList[0] == "--render-library-preview") Preview.ShowLibraryPage();
+                    if (ArgumentList[0] == "--render-claude-preview") Preview.ShowClaudePage();
                     Preview.Show();
                     Application.DoEvents();
                     using var Bitmap = new Bitmap(Preview.Width, Preview.Height);
@@ -51,7 +52,7 @@ public static class Program
                 }
                 return;
             }
-            string Command = ArgumentList.Length == 2 && ArgumentList[0] == "--launch" ? ArgumentList[1] : ArgumentList.Contains("--board") || ArgumentList.Contains("--relay") ? "relay" : ArgumentList.Contains("--collaboration") ? "collaboration" : ArgumentList.Contains("--harness") || ArgumentList.Contains("--cursor") ? "harness" : ArgumentList.Contains("--library") ? "library" : "show";
+            string Command = ArgumentList.Length == 2 && ArgumentList[0] == "--launch" ? ArgumentList[1] : ArgumentList.Contains("--board") || ArgumentList.Contains("--relay") ? "relay" : ArgumentList.Contains("--claude") ? "claude" : ArgumentList.Contains("--collaboration") ? "collaboration" : ArgumentList.Contains("--harness") || ArgumentList.Contains("--cursor") ? "harness" : ArgumentList.Contains("--library") ? "library" : "show";
             bool Background = ArgumentList.Contains("--background");
             using var Mutex = new Mutex(true, "Local\\" + PipeName, out bool Created);
             if (!Created)

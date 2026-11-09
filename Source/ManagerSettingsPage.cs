@@ -76,6 +76,12 @@ public sealed class ManagerSettingsPage : UserControl
         }
     }
 
+    public void RefreshExternalSettings()
+    {
+        ExternalInput.Checked = Settings.AllowExternalSupervisors;
+        ExternalNamesInput.Text = string.Join(Environment.NewLine, Settings.ExternalSupervisorAllowList);
+    }
+
     private void UpdateAutoStart(object? Sender, EventArgs Event)
     {
         if (Restoring) return;

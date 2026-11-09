@@ -24,9 +24,17 @@ public sealed class ManagerSettings
     public bool DarkMode { get; set; } = true;
     public CursorHarnessSettings Cursor { get; set; } = new();
     public DshSettings Dsh { get; set; } = new();
+    public ClaudeCodeSettings ClaudeCode { get; set; } = new();
     public LibrarySettings Library { get; set; } = new();
     public bool AllowExternalSupervisors { get; set; }
     public List<string> ExternalSupervisorAllowList { get; set; } = new();
+}
+
+public sealed class ClaudeCodeSettings
+{
+    public string CliPath { get; set; } = "";
+    public string WorkingDirectory { get; set; } = "";
+    public string CallerName { get; set; } = "claude";
 }
 
 public sealed class LibrarySettings

@@ -83,7 +83,7 @@ internal static class HarnessUiTests
                 if (TimeoutInput.Minimum != 0 || TimeoutInput.Value != 0 || !Descendants(Collaboration).OfType<Label>().Any(Item => Item.Text.Contains("0无限"))) throw new Exception("Moved channel editor lost unlimited timeout setting");
                 Count++;
                 var Sources = Descendants(Collaboration).OfType<ThemeTabControl>().Single();
-                if (!Sources.TabPages.Select(Item => Item.Text).SequenceEqual(new[] { "Codex", "Cursor", "DSH" })) throw new Exception("Agent sources missing");
+                if (!Sources.TabPages.Select(Item => Item.Text).SequenceEqual(new[] { "Codex", "Cursor", "DSH", "Claude Code" })) throw new Exception("Agent sources missing");
                 Count++;
                 Sources.SelectedTab = Sources.TabPages[0];
                 Application.DoEvents();
@@ -122,6 +122,16 @@ internal static class HarnessUiTests
                     Count++;
                 }
                 Count++;
+                Collaboration.ShowClaude();
+                Application.DoEvents();
+                var ClaudePage = Descendants(Collaboration).OfType<ClaudeCodePage>().Single();
+                if (!ClaudePage.Visible || !Descendants(ClaudePage).OfType<TextBox>().Single(Item => Item.Name == "ClaudeSupervisorInstructions").ReadOnly || !Descendants(ClaudePage).OfType<TextBox>().Single(Item => Item.Name == "ClaudeCallerName").Text.Equals("claude", StringComparison.Ordinal)) throw new Exception("Claude Code supervisor entry missing its actual settings or instructions");
+                foreach (var Control in Descendants(ClaudePage).Where(Item => Item is Button or TextBox or CheckBox))
+                {
+                    if (!Control.Parent!.ClientRectangle.Contains(Control.Bounds)) throw new Exception("Claude Code control clipped " + Control.Name + " " + Size + " bounds=" + Control.Bounds + " parent=" + Control.Parent.ClientRectangle);
+                    Count++;
+                }
+                Count++;
                 Store.Save(new RelayTask { RequestKey = "cursor-row", Title = "Codex 到 Cursor", Channel = new() { MainInstance = Settings.InstanceList[0], WorkerInstance = new() { Id = "cursor", Name = "grok-model" }, MainTitle = "协调会话", WorkerTitle = "执行会话" }, State = eRelayState.Accepted });
                 Settings.InstanceList[0].Name = "实例1";
                 Form.ShowRelayPage();
@@ -146,6 +156,8 @@ internal static class HarnessUiTests
                     SavePreview(Form, Path.Combine(PreviewDirectory, "collaboration-codex-preview.png"));
                     Form.ShowHarnessPage(); Application.DoEvents();
                     SavePreview(Form, Path.Combine(PreviewDirectory, "collaboration-cursor-preview.png"));
+                    Form.ShowCollaborationPage(); Collaboration.ShowClaude(); Application.DoEvents();
+                    SavePreview(Form, Path.Combine(PreviewDirectory, "claude-code-preview.png"));
                 }
 
             }

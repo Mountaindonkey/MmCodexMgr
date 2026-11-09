@@ -2,6 +2,24 @@
 
 外部主管通过 `mmcodex.exe` 派发任务、等待 JSON 回报并验收，不需要在 Codex 会话里运行，也不需要 `CODEX_HOME`、`CODEX_THREAD_ID` 或 `--caller-thread`。管理器必须正在运行，目标 Codex 实例须完成登录，并具备正常的桌面桥接上下文。
 
+## 从 Claude Code 页面开始
+
+1. 打开管理器 → “跨 Agent 协作” → **Claude Code**。也可运行 `CodexInstanceManager.exe --claude` 直接打开此页。
+2. CLI 路径留空可自动发现已安装的 `claude`；选择 Claude 的工作目录，调用方名称默认 `claude`。
+3. 勾选“允许此主管调度 Codex”，点击“保存连接”。这会登记现有外部主管开关及名称白名单，不改变 Claude 或 Codex 的模型、凭据和全局规则。
+4. 点击“检查连接”，核对 Claude CLI、现有登录及管理器通道状态。尚未登录时先在自己的终端运行 `claude auth login`。
+5. 点击“启动 Claude Code”。管理器在所选目录打开交互终端，自动附加 Codex 调度指令；你直接向 Claude 输入工作目标。
+
+可以对打开的 Claude Code 说：
+
+> 在 primary 新建一个只读 Codex 会话，读取 E:\prj\mine\MmCodexMgr\Source\CodexInstanceManager.csproj 并告诉我目标框架。不要修改文件。你负责实际派发、等待回报、核对原文件后验收，不要只生成计划。
+
+Claude 会使用 `mmcodex --external-caller claude` 查询实例、创建或复用 Codex 会话、调用 `wait` 等待回报，验证后执行 `accept`。在“任务看板”中可看到“外部主管：claude”及它派出的任务。
+
+这里使用的是你本机 Claude Code 已有的登录、订阅或 Key 配置。管理器不保存或转发 API Key，也不把 Claude Key 用作 Codex 模型凭据。Claude 与 Codex 各自按原有配置运行，Claude 负责组织和验收任务。启动保留 Claude 的正常权限确认。
+
+如果 Claude Code 已经在其他终端运行，点击“复制主管指令”，将指令发给那个 Claude 会话即可；无需另开会话。复制本身不派发任何 Codex 任务。
+
 ## 启用
 
 在管理器的设置页开启“允许外部主管”，将 `claude` 加入名称允许列表并保存。默认关闭；未启用或名称未登记时，管理器拒绝外部请求。名称是本机调用方标识，不是远程身份认证；本机通信仅允许当前 Windows 用户访问。

@@ -12,6 +12,14 @@ internal static class Tests
     [STAThread]
     private static int Main(string[] ArgumentList)
     {
+        string? NativeProbeFile = Environment.GetEnvironmentVariable("MMCODEX_TEST_NATIVE_PROBE_FILE");
+        if (!string.IsNullOrEmpty(NativeProbeFile) && ArgumentList.Length == 4 && ArgumentList[0] == "--name")
+        {
+            File.WriteAllBytes(NativeProbeFile, System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { arguments = ArgumentList, cwd = Environment.CurrentDirectory }));
+            return 0;
+        }
+        if (ArgumentList.Contains("--claude-supervisor")) { ClaudeCodeSupervisorTests.Run(); return 0; }
+        if (ArgumentList.Contains("--claude-ui")) return ClaudeCodeUiTests.Run();
         if (ArgumentList.Contains("--library")) return LibraryTests.Run();
         if (ArgumentList.Contains("--external-supervisor")) { ExternalSupervisorTests.Run(); return 0; }
         if (ArgumentList.Contains("--external-cli")) { ExternalCliTests.Run(); return 0; }

@@ -279,7 +279,11 @@ public sealed class MainForm : Form
     }
     private void BuildSettingsPage()
     {
-        if (SettingsTab.Controls.Count != 0) return;
+        if (SettingsTab.Controls.Count != 0)
+        {
+            SettingsTab.Controls.OfType<ManagerSettingsPage>().Single().RefreshExternalSettings();
+            return;
+        }
         var Page = new ManagerSettingsPage(PreviewOnly, Settings: Settings);
         SettingsTab.Controls.Add(Page);
         Theme.Apply(Page);
@@ -293,6 +297,11 @@ public sealed class MainForm : Form
     {
         ShowCollaborationPage();
         CollaborationTab.Controls.OfType<CollaborationPage>().Single().ShowCursor();
+    }
+    public void ShowClaudePage()
+    {
+        ShowCollaborationPage();
+        CollaborationTab.Controls.OfType<CollaborationPage>().Single().ShowClaude();
     }
     public void ShowCollaborationPage()
     {
@@ -493,6 +502,7 @@ public sealed class MainForm : Form
         if (Command == "show") { ShowManager(); return; }
         if (Command == "relay") { ShowRelayPage(); ShowManager(); return; }
         if (Command == "harness") { ShowHarnessPage(); ShowManager(); return; }
+        if (Command == "claude") { ShowClaudePage(); ShowManager(); return; }
         if (Command == "collaboration") { ShowCollaborationPage(); ShowManager(); return; }
         if (Command == "library") { ShowLibraryPage(); ShowManager(); return; }
         var Profile = Settings.InstanceList.FirstOrDefault(Item => Item.Id == Command) ?? throw new InvalidOperationException("找不到指定实例 " + Command);

@@ -6,6 +6,8 @@ public sealed class CollaborationPage : UserControl
     private readonly ThemeTabControl SourceTabs;
     /// <summary> Cursor 来源页 </summary>
     private readonly NavigationPage CursorPage = new("Cursor");
+    private readonly NavigationPage ClaudePage = new("Claude Code");
+    private readonly ClaudeCodePage ClaudeConnection;
     /// <summary> 当前实例与协作配置 </summary>
     private readonly ManagerSettings Settings;
     /// <summary> 页面外观 </summary>
@@ -51,9 +53,12 @@ public sealed class CollaborationPage : UserControl
         CursorPage.Controls.Add(new HarnessPage(Settings, Coordinator.Cursor, Theme, ToggleTheme, true));
         var DshPage = new NavigationPage("DSH");
         DshPage.Controls.Add(new DshPage(Settings));
+        ClaudeConnection = new ClaudeCodePage(Settings, ShowBoard);
+        ClaudePage.Controls.Add(ClaudeConnection);
         SourceTabs.TabPages.Add(CodexPage);
         SourceTabs.TabPages.Add(CursorPage);
         SourceTabs.TabPages.Add(DshPage);
+        SourceTabs.TabPages.Add(ClaudePage);
         Root.Controls.Add(SourceTabs);
         Root.Controls.Add(Status);
         Controls.Add(Root);
@@ -63,9 +68,11 @@ public sealed class CollaborationPage : UserControl
     }
 
     public void ShowCursor() => SourceTabs.SelectedTab = CursorPage;
+    public void ShowClaude() => SourceTabs.SelectedTab = ClaudePage;
 
     private void ShowDoctor()
     {
+        if (SourceTabs.SelectedTab == ClaudePage) { _ = ClaudeConnection.CheckConnectionAsync(); return; }
         string InstanceId = SourceTabs.SelectedTab == CursorPage ? CursorRelayRunner.InstanceId : CodexSessions.SelectedInstance?.Id ?? Settings.SelectedId;
         if (SourceTabs.SelectedTab?.Text == "DSH") InstanceId = DshRelayRunner.InstanceId;
         using var Dialog = new Form { Text = "健康检查 · " + AgentDisplay.Instance(Settings, InstanceId, InstanceId), Font = Font, ClientSize = new Size(760, 420), StartPosition = FormStartPosition.CenterParent };
