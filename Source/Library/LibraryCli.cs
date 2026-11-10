@@ -42,7 +42,7 @@ public static class LibraryCli
                 return SkillDistribution.Scan();
             case "library-preview-agent-skills":
             {
-                var Target = SkillDistribution.Scan().SingleOrDefault(Item => Item.Agent == Required("agent")) ?? throw new InvalidOperationException("--agent 必须为 cursor dsh 或 shared");
+                var Target = SkillDistribution.Scan().SingleOrDefault(Item => Item.Agent == Required("agent")) ?? throw new InvalidOperationException("--agent 必须为 cursor dsh shared 或 claude");
                 var Plan = SkillDistribution.Preview(SourceSkills(), Target, Settings.Library.ExcludedNameList);
                 Save(Required("plan-file"), new("distribution", null, null, Distribution: Plan));
                 return new { plan_file = Required("plan-file"), Plan.HasChanges, source = Plan.SourceRoot, destination = Plan.Target.PathValue, packages = Plan.PackageList.Select(Item => Item.Name), replaced = Plan.ReplacedList, behavior = "覆盖源中技能及其旧别名 原内容先备份 保留第三方技能与 .system 不修改 Rule MCP 或账号" };

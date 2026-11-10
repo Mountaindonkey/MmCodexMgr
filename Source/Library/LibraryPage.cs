@@ -250,7 +250,7 @@ public sealed class LibraryPage : UserControl
         Choice.Items.AddRange(TargetList.Cast<object>().ToArray());
         Choice.SelectedIndex = 0;
         var Hint = new Label { Dock = DockStyle.Fill, AutoEllipsis = true };
-        Choice.SelectedIndexChanged += (_, _) => { var Target = (SkillTarget)Choice.SelectedItem!; Hint.Text = Target.PathValue + "\n" + (Target.Available ? "shared 为 Cursor 与 DSH 的共享目录 同名覆盖前备份 第三方技能保留" : "未发现配置目录 请先安装或启动目标软件"); };
+        Choice.SelectedIndexChanged += (_, _) => { var Target = (SkillTarget)Choice.SelectedItem!; Hint.Text = Target.PathValue + "\n" + (Target.Available ? "shared 为 Cursor 与 DSH 的共享目录 claude 为 Claude Code 同名覆盖前备份 第三方技能保留" : "未发现配置目录 请先安装或启动目标软件"); };
         Hint.Text = TargetList[0].PathValue + "\n选择目标后预览 不修改账号 Rule MCP 或项目";
         Root.Controls.Add(Choice);
         Root.Controls.Add(Hint);

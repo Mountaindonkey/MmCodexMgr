@@ -71,10 +71,11 @@ public static class AgentCli
         library-config [--repository <仓库根>] [--skill-source <技能源目录>] [--rule-source <规则MD>] [--excluded <name逗号列表|none>]
           无参数查看本机配置 默认不排除任何 Skill 不限制技能名称或数量
         library-scan-rules  扫描各 Agent 的全局规则位置 无需启动管理器
-        library-scan-skills  扫描 Cursor DSH 与共享 Skill 目录
-        library-preview-agent-skills --agent <cursor|dsh|shared> [--source primary|library] --plan-file <绝对路径>
+        library-scan-skills  扫描 Cursor DSH 共享与 Claude Code 的 Skill 目录
+        library-preview-agent-skills --agent <cursor|dsh|shared|claude> [--source primary|library] --plan-file <绝对路径>
           预览向其他 Agent 分发相同技能包 要求小写连字符标识 原内容先备份 保留第三方技能
           shared 对应 ~/.agents/skills 由 Cursor 与 DSH 共同发现 DSH_HOME 与 DSH_AGENTS_HOME 可覆盖默认目录
+          claude 对应 ~/.claude/skills CLAUDE_CONFIG_DIR 可覆盖默认目录 无 SKILL.md 的共享资料目录不分发
         library-preview-skills --instance <目标实例> [--source primary|library] --plan-file <绝对路径>
           source 默认 primary 使用 library 可将维护源库完整安装到主实例
         library-preview-import --skill <包含SKILL.md的目录> --plan-file <绝对路径>

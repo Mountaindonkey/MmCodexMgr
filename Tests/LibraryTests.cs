@@ -91,7 +91,16 @@ internal static class LibraryTests
         Package(Target, ".system", "builtin", "protected");
         File.WriteAllText(Path.Combine(Target, "MmCodingFucker.md"), "flat legacy");
         var Targets = SkillDistribution.Scan(Home);
-        Require(Targets.Select(Item => Item.Agent).SequenceEqual(new[] { "cursor", "dsh", "shared" }), "skill targets include Cursor DSH and the common root");
+        Require(Targets.Select(Item => Item.Agent).SequenceEqual(new[] { "cursor", "dsh", "shared", "claude" }), "skill targets include Cursor DSH the common root and Claude Code");
+        Require(!Targets.Single(Item => Item.Agent == "claude").Available && Targets.Single(Item => Item.Agent == "claude").PathValue == Path.Combine(Home, ".claude", "skills"), "missing Claude Code installation is explicit");
+        Directory.CreateDirectory(Path.Combine(Home, ".claude", "skills", "synced"));
+        Directory.CreateDirectory(Path.Combine(Source, "references"));
+        File.WriteAllText(Path.Combine(Source, "references", "shared.md"), "shared notes");
+        var Claude = SkillDistribution.Scan(Home).Single(Item => Item.Agent == "claude");
+        var ClaudePlan = SkillDistribution.Preview(Source, Claude);
+        Require(Claude.Available && ClaudePlan.PackageList.Count == 2 && ClaudePlan.ReplacedList.Count == 0, "support directories without SKILL.md are not treated as skills");
+        SkillDistribution.Apply(ClaudePlan, Path.Combine(Root, "distribution-claude-backup"));
+        Require(File.Exists(Path.Combine(Claude.PathValue, "external-skill", "SKILL.md")) && Directory.Exists(Path.Combine(Claude.PathValue, "synced")) && !SkillDistribution.Preview(Source, Claude).HasChanges, "Claude Code receives skills and keeps its own non-skill directories");
         Require(Targets.Single(Item => Item.Agent == "cursor").Available && !Targets.Single(Item => Item.Agent == "dsh").Available, "missing DSH installation is explicit");
         var Cursor = Targets.Single(Item => Item.Agent == "cursor");
         var Plan = SkillDistribution.Preview(Source, Cursor);

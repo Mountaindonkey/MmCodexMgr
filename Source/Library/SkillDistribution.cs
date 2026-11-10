@@ -7,7 +7,7 @@ public sealed record SkillDistributionPlan(SkillTarget Target, string SourceRoot
 public static class SkillDistribution
 {
     #region Preview
-    public static List<SkillTarget> Scan(string? UserRoot = null, string? DshHome = null, string? AgentsHome = null)
+    public static List<SkillTarget> Scan(string? UserRoot = null, string? DshHome = null, string? AgentsHome = null, string? ClaudeHome = null)
     {
         string Home = UserRoot ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string Cursor = Path.Combine(Home, ".cursor");
@@ -15,8 +15,11 @@ public static class SkillDistribution
         string? AgentsSetting = AgentsHome ?? (UserRoot is null ? Environment.GetEnvironmentVariable("DSH_AGENTS_HOME") : null);
         string Dsh = string.IsNullOrWhiteSpace(DshSetting) ? Path.Combine(Home, ".dsh") : DshSetting;
         string Agents = string.IsNullOrWhiteSpace(AgentsSetting) ? Path.Combine(Home, ".agents") : AgentsSetting;
+        string? ClaudeSetting = ClaudeHome ?? (UserRoot is null ? Environment.GetEnvironmentVariable("CLAUDE_CONFIG_DIR") : null);
+        string Claude = string.IsNullOrWhiteSpace(ClaudeSetting) ? Path.Combine(Home, ".claude") : ClaudeSetting;
         if (!Path.IsPathFullyQualified(Dsh) || !Path.IsPathFullyQualified(Agents)) throw new IOException("DSH Skill 根目录必须是绝对路径");
-        return new() { new("cursor", Path.Combine(Cursor, "skills"), Directory.Exists(Cursor)), new("dsh", Path.Combine(Dsh, "skills"), Directory.Exists(Dsh)), new("shared", Path.Combine(Agents, "skills"), Directory.Exists(Home)) };
+        if (!Path.IsPathFullyQualified(Claude)) throw new IOException("Claude Code 配置目录必须是绝对路径");
+        return new() { new("cursor", Path.Combine(Cursor, "skills"), Directory.Exists(Cursor)), new("dsh", Path.Combine(Dsh, "skills"), Directory.Exists(Dsh)), new("shared", Path.Combine(Agents, "skills"), Directory.Exists(Home)), new("claude", Path.Combine(Claude, "skills"), Directory.Exists(Claude)) };
     }
 
     /// <summary>
