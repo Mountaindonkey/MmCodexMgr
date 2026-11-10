@@ -213,10 +213,47 @@ public sealed class SkillMirrorTransaction
     {
         string Target = Path.Combine(BackupPath, Path.GetFileName(Entry));
         if (!ManagerPaths.IsUnder(Entry, Root) || !ManagerPaths.IsUnder(Target, BackupPath)) throw new IOException("Skill 备份路径越界");
-        if ((File.GetAttributes(Entry) & FileAttributes.Directory) != 0) Directory.Move(Entry, Target); else File.Move(Entry, Target);
+        MoveEntry(Entry, Target);
         MovedList.Add(Entry);
     }
     public void RegisterCreated(string Entry) => CreatedList.Add(Entry);
+
+    /// <summary>
+    /// 移动条目 备份目录与技能目录不在同一磁盘时改为完整复制后删除 复制完成前不动原条目
+    /// </summary>
+    public static void MoveEntry(string Source, string Target, bool ForceCopy = false)
+    {
+        var Attributes = File.GetAttributes(Source);
+        bool IsDirectory = (Attributes & FileAttributes.Directory) != 0;
+        if (!ForceCopy && string.Equals(Path.GetPathRoot(Path.GetFullPath(Source)), Path.GetPathRoot(Path.GetFullPath(Target)), StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsDirectory) Directory.Move(Source, Target); else File.Move(Source, Target);
+            return;
+        }
+        if ((Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("链接条目无法跨磁盘移动 " + Source);
+        if (!IsDirectory) { File.Copy(Source, Target); File.SetAttributes(Source, FileAttributes.Normal); File.Delete(Source); return; }
+        try { CopyAll(Source, Target); }
+        catch { if (Directory.Exists(Target)) DeleteAll(Target); throw; }
+        DeleteAll(Source);
+    }
+
+    private static void CopyAll(string Source, string Target)
+    {
+        Directory.CreateDirectory(Target);
+        foreach (string Entry in Directory.EnumerateFileSystemEntries(Source))
+        {
+            var Attributes = File.GetAttributes(Entry);
+            if ((Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("含链接的条目无法跨磁盘移动 " + Entry);
+            string Child = Path.Combine(Target, Path.GetFileName(Entry));
+            if ((Attributes & FileAttributes.Directory) != 0) CopyAll(Entry, Child); else File.Copy(Entry, Child);
+        }
+    }
+
+    private static void DeleteAll(string DirectoryPath)
+    {
+        foreach (string FilePath in Directory.EnumerateFiles(DirectoryPath, "*", SearchOption.AllDirectories)) File.SetAttributes(FilePath, FileAttributes.Normal);
+        Directory.Delete(DirectoryPath, true);
+    }
     public void Rollback()
     {
         var ErrorList = new List<Exception>();
@@ -234,7 +271,7 @@ public sealed class SkillMirrorTransaction
             try
             {
                 string Original = Path.Combine(BackupPath, Path.GetFileName(Entry));
-                if ((File.GetAttributes(Original) & FileAttributes.Directory) != 0) Directory.Move(Original, Entry); else File.Move(Original, Entry);
+                MoveEntry(Original, Entry);
             }
             catch (Exception Error) { ErrorList.Add(Error); }
         }

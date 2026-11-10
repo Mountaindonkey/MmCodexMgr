@@ -70,6 +70,14 @@ internal static class LibraryTests
         var Import = SkillMirror.Preview(Self, Self, SkillMirror.ReadPackage(Path.Combine(Foreign, "anything")));
         SkillMirror.Apply(Import, Path.Combine(Root, "import-backup"));
         Require(File.Exists(Path.Combine(Self, "self-skill", "data.txt")) && File.ReadAllText(Path.Combine(Self, "third-party-new-skill", "data.txt")) == "not in original library", "import arbitrary external packages preserves existing library packages");
+        string Moved = Path.Combine(Root, "cross-volume");
+        Package(Moved, "from", "moved-skill", "payload");
+        Directory.CreateDirectory(Path.Combine(Moved, "from", ".git"));
+        File.WriteAllText(Path.Combine(Moved, "from", ".git", "object"), "history");
+        File.SetAttributes(Path.Combine(Moved, "from", ".git", "object"), FileAttributes.ReadOnly);
+        SkillMirrorTransaction.MoveEntry(Path.Combine(Moved, "from"), Path.Combine(Moved, "to"), true);
+        Require(!Directory.Exists(Path.Combine(Moved, "from")) && File.ReadAllText(Path.Combine(Moved, "to", "data.txt")) == "payload" && File.ReadAllText(Path.Combine(Moved, "to", ".git", "object")) == "history", "backup on another volume copies the whole entry then removes the original");
+        File.SetAttributes(Path.Combine(Moved, "to", ".git", "object"), FileAttributes.Normal);
         string Conflict = Path.Combine(Root, "conflict");
         Package(Conflict, "alias1", "conflict-skill", "a");
         Package(Conflict, "alias2", "conflict-skill", "b");
