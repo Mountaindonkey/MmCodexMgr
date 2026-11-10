@@ -36,6 +36,10 @@ internal static class LibraryTests
         Package(Source, "discard", "image2-prompt", "removed");
         Package(Target, "extra", "extra", "target only");
         Package(Target, ".system", "built-in", "preserve");
+        Directory.CreateDirectory(Path.Combine(Source, "references"));
+        File.WriteAllText(Path.Combine(Source, "references", "shared.md"), "source notes");
+        Directory.CreateDirectory(Path.Combine(Target, "references"));
+        File.WriteAllText(Path.Combine(Target, "references", "shared.md"), "target notes");
         var ExcludedList = new[] { "image2-prompt" };
         Require(SkillMirror.Scan(Source).Any(Item => Item.Name == "image2-prompt"), "default supports arbitrary skills without this user's exclusions");
         var Plan = SkillMirror.Preview(Source, Target, ExcludedNameList: ExcludedList);
@@ -45,6 +49,7 @@ internal static class LibraryTests
         Require(File.ReadAllText(Path.Combine(Target, "one", "data.txt")) == "current", "canonical payload wins");
         Require(!Directory.Exists(Path.Combine(Target, "extra")) && Directory.Exists(Path.Combine(Backup, "extra")), "extra moved to backup");
         Require(File.Exists(Path.Combine(Target, ".system", "SKILL.md")), "system skills preserved");
+        Require(File.ReadAllText(Path.Combine(Target, "references", "shared.md")) == "target notes" && !Directory.Exists(Path.Combine(Backup, "references")), "shared support directory is neither a skill nor mirrored away");
         Require(!Directory.Exists(Path.Combine(Target, "OldAlias")), "aliases not copied");
         Require(!SkillMirror.Preview(Source, Target, ExcludedNameList: ExcludedList).HasChanges, "mirror idempotent");
         Transaction.Rollback();

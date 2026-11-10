@@ -33,12 +33,12 @@ public static class SkillMirror
     }
 
     /// <summary>
-    /// 扫描自定义包 默认排除停用项 内置目录不参与
+    /// 扫描自定义包 默认排除停用项 内置目录与无 SKILL.md 的共享资料目录不参与
     /// </summary>
     public static List<SkillPackage> Scan(string Root, IReadOnlyCollection<string>? ExcludedNameList = null)
     {
         if (!Directory.Exists(Root)) throw new DirectoryNotFoundException("Skill 目录不存在 " + Root);
-        return Directory.EnumerateDirectories(Root).Where(PathValue => !Path.GetFileName(PathValue).StartsWith('.'))
+        return Directory.EnumerateDirectories(Root).Where(PathValue => !Path.GetFileName(PathValue).StartsWith('.') && !IsSupport(PathValue))
             .Select(ReadPackage).Where(Item => ExcludedNameList is null || !ExcludedNameList.Contains(Item.Name, StringComparer.OrdinalIgnoreCase)).OrderBy(Item => Item.Name, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
@@ -74,7 +74,12 @@ public static class SkillMirror
 
     private static string PackageHash(IReadOnlyList<SkillPackage> PackageList) => string.Join("\n", PackageList.Select(Item => Item.Name + "=" + TreeHash(Item.DirectoryPath)));
 
-    public static IEnumerable<string> Entries(string Root) => Directory.Exists(Root) ? Directory.EnumerateFileSystemEntries(Root).Where(Item => !string.Equals(Path.GetFileName(Item), ".system", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.OrdinalIgnoreCase) : Array.Empty<string>();
+    /// <summary>
+    /// 技能根下没有 SKILL.md 的真实目录 如多个技能共用的 references 既不是技能也不应被镜像清走
+    /// </summary>
+    internal static bool IsSupport(string Entry) => Directory.Exists(Entry) && (File.GetAttributes(Entry) & FileAttributes.ReparsePoint) == 0 && !File.Exists(Path.Combine(Entry, "SKILL.md"));
+
+    public static IEnumerable<string> Entries(string Root) => Directory.Exists(Root) ? Directory.EnumerateFileSystemEntries(Root).Where(Item => !string.Equals(Path.GetFileName(Item), ".system", StringComparison.OrdinalIgnoreCase) && !IsSupport(Item)).Order(StringComparer.OrdinalIgnoreCase) : Array.Empty<string>();
 
     /// <summary>
     /// 生成内容指纹 技能根模式保留链接身份并忽略系统包
