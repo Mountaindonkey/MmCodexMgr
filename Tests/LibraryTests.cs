@@ -70,6 +70,8 @@ internal static class LibraryTests
         var Import = SkillMirror.Preview(Self, Self, SkillMirror.ReadPackage(Path.Combine(Foreign, "anything")));
         SkillMirror.Apply(Import, Path.Combine(Root, "import-backup"));
         Require(File.Exists(Path.Combine(Self, "self-skill", "data.txt")) && File.ReadAllText(Path.Combine(Self, "third-party-new-skill", "data.txt")) == "not in original library", "import arbitrary external packages preserves existing library packages");
+        Require(SkillMirror.Remove(Self, "third-party-new-skill", Path.Combine(Root, "delete-backup")) == 1 && !Directory.Exists(Path.Combine(Self, "third-party-new-skill")) && File.Exists(Path.Combine(Root, "delete-backup", "third-party-new-skill", "data.txt")) && Directory.Exists(Path.Combine(Self, "self-skill")), "delete moves only the named skill into backup");
+        Reject<InvalidOperationException>(() => SkillMirror.Remove(Self, "third-party-new-skill", Path.Combine(Root, "delete-missing")), "deleting an unknown skill is rejected");
         string Moved = Path.Combine(Root, "cross-volume");
         Package(Moved, "from", "moved-skill", "payload");
         Directory.CreateDirectory(Path.Combine(Moved, "from", ".git"));

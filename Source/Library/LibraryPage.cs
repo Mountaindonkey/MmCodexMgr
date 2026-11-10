@@ -59,6 +59,7 @@ public sealed class LibraryPage : UserControl
         SkillActions.Controls.Add(Action("安装整库", InstallLibraryAsync));
         SkillActions.Controls.Add(Action("同步到 Agent", DistributeSkillsAsync));
         SkillActions.Controls.Add(Action("导入 Skill", ImportSkillAsync));
+        SkillActions.Controls.Add(Action("删除", DeleteSkillAsync));
         SkillActions.Controls.Add(Action("排除项", EditExclusions));
         Root.Controls.Add(SkillActions);
         SkillGrid.Name = "SkillLibraryGrid";
@@ -236,6 +237,20 @@ public sealed class LibraryPage : UserControl
         SkillView.SelectedIndex = 1;
         RefreshSkills();
         Status.Text = "已导入维护源库 可另行安装或发布到 Git 备份 " + Backup;
+    }
+
+    private async Task DeleteSkillAsync()
+    {
+        if (PreviewOnly) throw new InvalidOperationException("预览模式不删除技能");
+        var Package = SelectedPackage();
+        bool Primary = SkillView.SelectedIndex == 0;
+        string Root = Primary ? Path.Combine(PrimaryProfile().HomePath, "skills") : Settings.Library.SkillSource;
+        string PathList = string.Join("\n", PackageList.Where(Item => string.Equals(Item.Name, Package.Name, StringComparison.OrdinalIgnoreCase)).Select(Item => Item.DirectoryPath));
+        if (MessageBox.Show(this, "从" + (Primary ? "主实例" : "维护源库") + "删除 " + Package.Name + "\n" + PathList + "\n\n原内容移入备份 可手动找回\n只删除当前列表所在位置 其他实例和已同步的 Agent 不受影响", "删除 Skill", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2) != DialogResult.OK) return;
+        string Backup = Path.Combine(ManagerPaths.BackupRoot, "skill-delete-" + Guid.NewGuid().ToString("N"));
+        int Count = await Task.Run(() => SkillMirror.Remove(Root, Package.Name, Backup));
+        RefreshSkills();
+        Status.Text = "已删除 " + Package.Name + " 共 " + Count + " 个目录 备份 " + Backup;
     }
 
     private async Task DistributeSkillsAsync()

@@ -171,6 +171,32 @@ public static class SkillMirror
         }
     }
 
+    /// <summary>
+    /// 从技能根删除指定 name 的全部目录 原内容移入备份 返回移走的目录数
+    /// </summary>
+    public static int Remove(string Root, string Name, string BackupPath)
+    {
+        Root = ManagerPaths.Normalize(Root);
+        EnsureRoot(Root);
+        if (ManagerPaths.Same(BackupPath, Root) || ManagerPaths.IsUnder(BackupPath, Root)) throw new IOException("Skill 备份不能位于技能目录内");
+        if (Directory.Exists(BackupPath) && Directory.EnumerateFileSystemEntries(BackupPath).Any()) throw new IOException("Skill 备份目录不是空目录 " + BackupPath);
+        var MatchList = Scan(Root).Where(Item => string.Equals(Item.Name, Name, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (MatchList.Count == 0) throw new InvalidOperationException("未找到 Skill " + Name);
+        Directory.CreateDirectory(BackupPath);
+        var Transaction = new SkillMirrorTransaction(Root, BackupPath);
+        try
+        {
+            foreach (var Package in MatchList) Transaction.BackupEntry(Package.DirectoryPath);
+        }
+        catch (Exception Error)
+        {
+            try { Transaction.Rollback(); }
+            catch (Exception RestoreError) { throw new AggregateException("Skill 删除与恢复失败 备份 " + BackupPath, Error, RestoreError); }
+            throw;
+        }
+        return MatchList.Count;
+    }
+
     private static void DeleteStaging(string Staging)
     {
         if (!ManagerPaths.IsUnder(Staging, Path.GetTempPath())) throw new IOException("非法临时目录 " + Staging);
